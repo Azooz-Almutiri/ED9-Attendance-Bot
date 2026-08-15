@@ -47,7 +47,7 @@ class AttendanceView(discord.ui.View):
                 return
 
             await db.execute("INSERT INTO attendance (user_id, user_name, type, start_time) VALUES (?, ?, ?, ?)",
-                             (user.id, user.display_name, self.role_type, now))
+                             (user.id, user.display_name, self.role_type, now.isoformat()))
             await db.commit()
 
         await interaction.followup.send(f"✅ تم تسجيل دخولك كـ ({self.role_type}) الساعة `{now.strftime('%I:%M %p')}`", ephemeral=True)
@@ -70,7 +70,7 @@ class AttendanceView(discord.ui.View):
             start_time = datetime.fromisoformat(str(start_str))
             duration = int((now - start_time).total_seconds() // 60)
 
-            await db.execute("UPDATE attendance SET end_time = ?, duration_minutes = ? WHERE rowid = ?", (now, duration, row_id))
+            await db.execute("UPDATE attendance SET end_time = ?, duration_minutes = ? WHERE rowid = ?", (now.isoformat(), duration, row_id))
             await db.commit()
 
         hours, mins = divmod(duration, 60)
@@ -86,7 +86,7 @@ class AttendanceView(discord.ui.View):
             async with db.execute("SELECT start_time FROM attendance WHERE user_id = ? AND end_time IS NULL", (user.id,)) as cursor:
                 active_session = await cursor.fetchone()
 
-            five_days_ago = now - timedelta(days=5)
+            five_days_ago = (now - timedelta(days=5)).isoformat()
             async with db.execute("SELECT SUM(duration_minutes) FROM attendance WHERE user_id = ? AND start_time >= ?", (user.id, five_days_ago)) as cursor:
                 weekly_minutes = (await cursor.fetchone())[0] or 0
 
@@ -174,11 +174,15 @@ async def active_now(interaction: discord.Interaction):
 
     await interaction.followup.send(embed=embed)
 
-# 🔨 أمر إخراج/طرد عضو مسجل دخول حالياً (إداري)
-@bot.tree.command(name="force_checkout", description="إنهاء تحضير عضو إجبارياً وتسجيل خروجه")
+# 🔨 أمر طرد أو إخراج عضو مسجل دخول حالياً (إداري)
+@bot.tree.command(name="force_checkout", description="طرد أو إنهاء تحضير عضو مسجل دخول")
 @app_commands.checks.has_permissions(administrator=True)
-@app_commands.describe(user="العضو المراد إنهاء تحضيره")
-async def force_checkout(interaction: discord.Interaction, user: discord.Member):
+@app_commands.describe(user="العضو المراد إنهاء تحضيره", save_time="هل تريد احتساب الساعات أم إلغائها؟")
+@app_commands.choices(save_time=[
+    app_commands.Choice(name="حفظ الساعات التي قضاها", value="yes"),
+    app_commands.Choice(name="إلغاء الجلسة بدون احتساب ساعات (طرد بسبب اللعب)", value="no")
+])
+async def force_checkout(interaction: discord.Interaction, user: discord.Member, save_time: str = "yes"):
     await interaction.response.defer()
     now = datetime.now()
 
@@ -191,18 +195,21 @@ async def force_checkout(interaction: discord.Interaction, user: discord.Member)
             return
 
         row_id, start_str, r_type = active_session
-        start_time = datetime.fromisoformat(str(start_str))
-        duration = int((now - start_time).total_seconds() // 60)
 
-        await db.execute("UPDATE attendance SET end_time = ?, duration_minutes = ? WHERE rowid = ?", (now, duration, row_id))
-        await db.commit()
+        if save_time == "yes":
+            start_time = datetime.fromisoformat(str(start_str))
+            duration = int((now - start_time).total_seconds() // 60)
+            await db.execute("UPDATE attendance SET end_time = ?, duration_minutes = ? WHERE rowid = ?", (now.isoformat(), duration, row_id))
+            await db.commit()
+            hours, mins = divmod(duration, 60)
+            msg = f"🚨 **إنهاء تحضير:** تم إنهاء جلسة {user.mention} بواسطة الإدارة.\n⏱️ **مدة الجلسة المحسوبة:** `{hours} ساعة و {mins} دقيقة`"
+        else:
+            # إلغاء الجلسة بالكامل وحذفها
+            await db.execute("DELETE FROM attendance WHERE rowid = ?", (row_id,))
+            await db.commit()
+            msg = f"⛔ **طرد وإلغاء تحضير:** تم إخراج {user.mention} وإلغاء الجلسة الحالية بدون احتساب أي ساعات!"
 
-    hours, mins = divmod(duration, 60)
-    embed = discord.Embed(
-        title="🚨 إنهاء تحضير إجباري",
-        description=f"تم تسجيل خروج العضو {user.mention} إجبارياً بواسطة الإدارة.\n⏱️ مدة الجلسة المحسوبة: `{hours} ساعة و {mins} دقيقة`",
-        color=discord.Color.red()
-    )
+    embed = discord.Embed(title="إجراء إداري", description=msg, color=discord.Color.red())
     await interaction.followup.send(embed=embed)
 
 # أمر الجرد والتفاصيل لآخر 5 أيام
@@ -211,11 +218,11 @@ async def force_checkout(interaction: discord.Interaction, user: discord.Member)
 async def stats_weekly(interaction: discord.Interaction):
     await interaction.response.defer()
     
-    five_days_ago = datetime.now() - timedelta(days=5)
+    five_days_ago = (datetime.now() - timedelta(days=5)).isoformat()
     
     async with aiosqlite.connect(DB_NAME) as db:
         async with db.execute("""
-            SELECT user_id, user_name, type, DATE(start_time) as log_date, duration_minutes 
+            SELECT user_id, user_name, type, start_time, duration_minutes 
             FROM attendance 
             WHERE start_time >= ? AND duration_minutes > 0
             ORDER BY start_time DESC
@@ -227,7 +234,8 @@ async def stats_weekly(interaction: discord.Interaction):
         return
 
     user_data = {}
-    for u_id, u_name, r_type, log_date, duration in rows:
+    for u_id, u_name, r_type, start_str, duration in rows:
+        log_date = str(start_str).split("T")[0].split(" ")[0]
         if u_id not in user_data:
             user_data[u_id] = {
                 'name': u_name,
@@ -240,10 +248,7 @@ async def stats_weekly(interaction: discord.Interaction):
         user_data[u_id]['dates'][log_date] = user_data[u_id]['dates'].get(log_date, 0) + dur
         user_data[u_id]['total_mins'] += dur
 
-    embed = discord.Embed(
-        title="📊 إحصائيات الحضور التفصيلية (آخر 5 أيام)",
-        color=discord.Color.purple()
-    )
+    embed = discord.Embed(title="📊 إحصائيات الحضور التفصيلية (آخر 5 أيام)", color=discord.Color.purple())
 
     for u_id, data in user_data.items():
         tot_hrs, tot_mins = divmod(data['total_mins'], 60)
@@ -254,13 +259,19 @@ async def stats_weekly(interaction: discord.Interaction):
             details += f"• `{date_str}`: **{d_hrs}** ساعة و **{d_mins}** دقيقة\n"
 
         field_value = f"**المجموع:** `{tot_hrs} ساعة و {tot_mins} دقيقة` (في {len(data['dates'])} أيام)\n{details}"
-        embed.add_field(
-            name=f"👤 {data['name']} [{data['type']}]", 
-            value=field_value, 
-            inline=False
-        )
+        embed.add_field(name=f"👤 {data['name']} [{data['type']}]", value=field_value, inline=False)
 
     await interaction.followup.send(embed=embed)
+
+# 🧹 أمر التصفير اليدوي لجميع السجلات (إداري)
+@bot.tree.command(name="reset_stats", description="تصفير ومسح جميع سجلات الحضور يدوياً")
+@app_commands.checks.has_permissions(administrator=True)
+async def reset_stats(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+    async with aiosqlite.connect(DB_NAME) as db:
+        await db.execute("DELETE FROM attendance")
+        await db.commit()
+    await interaction.followup.send("🧹 تم مسح وتصفير جميع سجلات الحضور بنجاح!", ephemeral=True)
 
 # تشغيل البوت
 TOKEN = os.environ.get("DISCORD_TOKEN")
