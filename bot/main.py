@@ -4,9 +4,14 @@ from discord.ext import commands
 from discord import app_commands
 import aiosqlite
 from datetime import datetime, timedelta
+from aiohttp import web
 
 # إعداد قاعدة البيانات
 DB_NAME = "attendance.db"
+
+# دالة الاستجابة لطلبات UptimeRobot و Render
+async def handle(request):
+    return web.Response(text="Bot is running alive!")
 
 async def init_db():
     async with aiosqlite.connect(DB_NAME) as db:
@@ -112,6 +117,16 @@ class AttendanceBot(commands.Bot):
         self.add_view(AttendanceView("أفراد"))
         self.add_view(AttendanceView("ضباط"))
         await self.tree.sync()
+
+        # تشغيل سيرفر الويب لاستقبال الطلبات من Render و UptimeRobot
+        app = web.Application()
+        app.router.add_get('/', handle)
+        runner = web.AppRunner(app)
+        await runner.setup()
+        port = int(os.environ.get("PORT", 8080))
+        site = web.TCPSite(runner, '0.0.0.0', port)
+        await site.start()
+        print(f"Web server started on port {port}")
 
 bot = AttendanceBot()
 
