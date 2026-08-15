@@ -29,6 +29,7 @@ class AttendanceView(discord.ui.View):
 
     @discord.ui.button(label="بدء التحضير", style=discord.ButtonStyle.green, custom_id="start_attendance")
     async def start_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer(ephemeral=True)
         user = interaction.user
         now = datetime.now()
 
@@ -37,17 +38,18 @@ class AttendanceView(discord.ui.View):
                 active_session = await cursor.fetchone()
 
             if active_session:
-                await interaction.response.send_message("❌ أنت مسجل دخول بالفعل!", ephemeral=True)
+                await interaction.followup.send("❌ أنت مسجل دخول بالفعل!", ephemeral=True)
                 return
 
             await db.execute("INSERT INTO attendance (user_id, user_name, type, start_time) VALUES (?, ?, ?, ?)",
                              (user.id, user.display_name, self.role_type, now))
             await db.commit()
 
-        await interaction.response.send_message(f"✅ تم تسجيل دخولك كـ ({self.role_type}) الساعة `{now.strftime('%I:%M %p')}`", ephemeral=True)
+        await interaction.followup.send(f"✅ تم تسجيل دخولك كـ ({self.role_type}) الساعة `{now.strftime('%I:%M %p')}`", ephemeral=True)
 
     @discord.ui.button(label="إنهاء التحضير", style=discord.ButtonStyle.red, custom_id="end_attendance")
     async def end_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer(ephemeral=True)
         user = interaction.user
         now = datetime.now()
 
@@ -56,7 +58,7 @@ class AttendanceView(discord.ui.View):
                 active_session = await cursor.fetchone()
 
             if not active_session:
-                await interaction.response.send_message("❌ أنت غير مسجل دخول حالياً!", ephemeral=True)
+                await interaction.followup.send("❌ أنت غير مسجل دخول حالياً!", ephemeral=True)
                 return
 
             row_id, start_str = active_session
@@ -67,10 +69,11 @@ class AttendanceView(discord.ui.View):
             await db.commit()
 
         hours, mins = divmod(duration, 60)
-        await interaction.response.send_message(f"🔴 تم تسجيل خروجك. مدة تواجدك: `{hours} ساعة و {mins} دقيقة`", ephemeral=True)
+        await interaction.followup.send(f"🔴 تم تسجيل خروجك. مدة تواجدك: `{hours} ساعة و {mins} دقيقة`", ephemeral=True)
 
     @discord.ui.button(label="حالة تحضيري ⏱️", style=discord.ButtonStyle.secondary, custom_id="status_attendance")
     async def status_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer(ephemeral=True)
         user = interaction.user
         now = datetime.now()
 
@@ -96,7 +99,7 @@ class AttendanceView(discord.ui.View):
             msg = (f"🔴 **حالتك الحالية:** غير مسجل دخول\n"
                    f"📊 **إجمالي ساعاتك هذا الأسبوع:** {w_hours} ساعة و {w_mins} دقيقة")
 
-        await interaction.response.send_message(msg, ephemeral=True)
+        await interaction.followup.send(msg, ephemeral=True)
 
 
 class AttendanceBot(commands.Bot):
@@ -120,28 +123,31 @@ async def on_ready():
 @bot.tree.command(name="setup_individuals", description="تنزيل كرت تحضير الأفراد")
 @app_commands.checks.has_permissions(administrator=True)
 async def setup_ind(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
     embed = discord.Embed(title="📋 كرت تحضير الأفراد", description="اضغط الأزرار بالأسفل لتسجيل الدخول أو الخروج", color=discord.Color.blue())
     await interaction.channel.send(embed=embed, view=AttendanceView("أفراد"))
-    await interaction.response.send_message("تم إرسال الكرت بنجاح!", ephemeral=True)
+    await interaction.followup.send("تم إرسال الكرت بنجاح!", ephemeral=True)
 
 @bot.tree.command(name="setup_officers", description="تنزيل كرت تحضير الضباط")
 @app_commands.checks.has_permissions(administrator=True)
 async def setup_off(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
     embed = discord.Embed(title="👮‍♂️ كرت تحضير الضباط", description="اضغط الأزرار بالأسفل لتسجيل الدخول أو الخروج", color=discord.Color.gold())
     await interaction.channel.send(embed=embed, view=AttendanceView("ضباط"))
-    await interaction.response.send_message("تم إرسال الكرت بنجاح!", ephemeral=True)
+    await interaction.followup.send("تم إرسال الكرت بنجاح!", ephemeral=True)
 
 # أمر عرض المتواجدين حالياً
 @bot.tree.command(name="active_now", description="عرض المسجلين دخول حالياً ومدة تواجدهم")
 @app_commands.checks.has_permissions(administrator=True)
 async def active_now(interaction: discord.Interaction):
+    await interaction.response.defer()
     now = datetime.now()
     async with aiosqlite.connect(DB_NAME) as db:
         async with db.execute("SELECT user_name, type, start_time FROM attendance WHERE end_time IS NULL") as cursor:
             rows = await cursor.fetchall()
 
     if not rows:
-        await interaction.response.send_message("لا يوجد أي شخص مسجل دخول حالياً.", ephemeral=True)
+        await interaction.followup.send("لا يوجد أي شخص مسجل دخول حالياً.", ephemeral=True)
         return
 
     embed = discord.Embed(title="🟢 قائمة المتواجدين حالياً", color=discord.Color.green())
@@ -151,12 +157,13 @@ async def active_now(interaction: discord.Interaction):
         h, m = divmod(duration, 60)
         embed.add_field(name=f"{name} ({r_type})", value=f"⏱️ متواجد منذ: `{h} ساعة و {m} دقيقة`", inline=False)
 
-    await interaction.response.send_message(embed=embed)
+    await interaction.followup.send(embed=embed)
 
 # أمر الجرد الأسبوعي
 @bot.tree.command(name="stats_weekly", description="جرد ساعات الحضور الأسبوعية للجميع")
 @app_commands.checks.has_permissions(administrator=True)
 async def stats_weekly(interaction: discord.Interaction):
+    await interaction.response.defer()
     week_ago = datetime.now() - timedelta(days=7)
     async with aiosqlite.connect(DB_NAME) as db:
         async with db.execute("""
@@ -169,7 +176,7 @@ async def stats_weekly(interaction: discord.Interaction):
             rows = await cursor.fetchall()
 
     if not rows:
-        await interaction.response.send_message("لا توجد سجلات حضور خلال الـ 7 أيام الماضية.", ephemeral=True)
+        await interaction.followup.send("لا توجد سجلات حضور خلال الـ 7 أيام الماضية.", ephemeral=True)
         return
 
     embed = discord.Embed(title="📊 الجرد والساعات الأسبوعية", color=discord.Color.purple())
@@ -177,7 +184,7 @@ async def stats_weekly(interaction: discord.Interaction):
         h, m = divmod(total_mins or 0, 60)
         embed.add_field(name=f"{name} [{r_type}]", value=f"⏳ إجمالي الحضور: `{h} ساعة و {m} دقيقة`", inline=False)
 
-    await interaction.response.send_message(embed=embed)
+    await interaction.followup.send(embed=embed)
 
 # تشغيل البوت
 TOKEN = os.environ.get("DISCORD_TOKEN")
