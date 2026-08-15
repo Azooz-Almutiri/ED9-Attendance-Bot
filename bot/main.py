@@ -110,7 +110,7 @@ class AttendanceView(discord.ui.View):
 class AttendanceBot(commands.Bot):
     def __init__(self):
         intents = discord.Intents.default()
-        intents.message_content = True  # تفعيل صلاحية المحتوى لمنع التحذير
+        intents.message_content = True
         super().__init__(command_prefix="!", intents=intents)
 
     async def setup_hook(self):
@@ -119,7 +119,6 @@ class AttendanceBot(commands.Bot):
         self.add_view(AttendanceView("ضباط"))
         await self.tree.sync()
 
-        # تشغيل سيرفر الويب لاستقبال الطلبات من Render و UptimeRobot
         app = web.Application()
         app.router.add_get('/', handle)
         runner = web.AppRunner(app)
@@ -175,6 +174,37 @@ async def active_now(interaction: discord.Interaction):
 
     await interaction.followup.send(embed=embed)
 
+# 🔨 أمر إخراج/طرد عضو مسجل دخول حالياً (إداري)
+@bot.tree.command(name="force_checkout", description="إنهاء تحضير عضو إجبارياً وتسجيل خروجه")
+@app_commands.checks.has_permissions(administrator=True)
+@app_commands.describe(user="العضو المراد إنهاء تحضيره")
+async def force_checkout(interaction: discord.Interaction, user: discord.Member):
+    await interaction.response.defer()
+    now = datetime.now()
+
+    async with aiosqlite.connect(DB_NAME) as db:
+        async with db.execute("SELECT rowid, start_time, type FROM attendance WHERE user_id = ? AND end_time IS NULL", (user.id,)) as cursor:
+            active_session = await cursor.fetchone()
+
+        if not active_session:
+            await interaction.followup.send(f"❌ العضو {user.mention} غير مسجل دخول حالياً!", ephemeral=True)
+            return
+
+        row_id, start_str, r_type = active_session
+        start_time = datetime.fromisoformat(str(start_str))
+        duration = int((now - start_time).total_seconds() // 60)
+
+        await db.execute("UPDATE attendance SET end_time = ?, duration_minutes = ? WHERE rowid = ?", (now, duration, row_id))
+        await db.commit()
+
+    hours, mins = divmod(duration, 60)
+    embed = discord.Embed(
+        title="🚨 إنهاء تحضير إجباري",
+        description=f"تم تسجيل خروج العضو {user.mention} إجبارياً بواسطة الإدارة.\n⏱️ مدة الجلسة المحسوبة: `{hours} ساعة و {mins} دقيقة`",
+        color=discord.Color.red()
+    )
+    await interaction.followup.send(embed=embed)
+
 # أمر الجرد والتفاصيل لآخر 5 أيام
 @bot.tree.command(name="stats_weekly", description="عرض تفاصيل الحضور اليومية لآخر 5 أيام")
 @app_commands.checks.has_permissions(administrator=True)
@@ -196,7 +226,6 @@ async def stats_weekly(interaction: discord.Interaction):
         await interaction.followup.send("لا توجد سجلات حضور خلال الـ 5 أيام الأخيرة.", ephemeral=True)
         return
 
-    # تنظيم البيانات حسب كل مستخدم
     user_data = {}
     for u_id, u_name, r_type, log_date, duration in rows:
         if u_id not in user_data:
