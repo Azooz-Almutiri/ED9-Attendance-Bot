@@ -86,8 +86,8 @@ class AttendanceView(discord.ui.View):
             async with db.execute("SELECT start_time FROM attendance WHERE user_id = ? AND end_time IS NULL", (user.id,)) as cursor:
                 active_session = await cursor.fetchone()
 
-            week_ago = now - timedelta(days=7)
-            async with db.execute("SELECT SUM(duration_minutes) FROM attendance WHERE user_id = ? AND start_time >= ?", (user.id, week_ago)) as cursor:
+            five_days_ago = now - timedelta(days=5)
+            async with db.execute("SELECT SUM(duration_minutes) FROM attendance WHERE user_id = ? AND start_time >= ?", (user.id, five_days_ago)) as cursor:
                 weekly_minutes = (await cursor.fetchone())[0] or 0
 
         w_hours, w_mins = divmod(weekly_minutes, 60)
@@ -99,10 +99,10 @@ class AttendanceView(discord.ui.View):
             
             msg = (f"🟢 **حالتك الحالية:** مسجل دخول\n"
                    f"⏱️ **مدة التواجد الحالية:** {c_hours} ساعة و {c_mins} دقيقة\n"
-                   f"📊 **إجمالي ساعاتك هذا الأسبوع:** {w_hours} ساعة و {w_mins} دقيقة")
+                   f"📊 **إجمالي ساعاتك لآخر 5 أيام:** {w_hours} ساعة و {w_mins} دقيقة")
         else:
             msg = (f"🔴 **حالتك الحالية:** غير مسجل دخول\n"
-                   f"📊 **إجمالي ساعاتك هذا الأسبوع:** {w_hours} ساعة و {w_mins} دقيقة")
+                   f"📊 **إجمالي ساعاتك لآخر 5 أيام:** {w_hours} ساعة و {w_mins} دقيقة")
 
         await interaction.followup.send(msg, ephemeral=True)
 
@@ -110,6 +110,7 @@ class AttendanceView(discord.ui.View):
 class AttendanceBot(commands.Bot):
     def __init__(self):
         intents = discord.Intents.default()
+        intents.message_content = True  # تفعيل صلاحية المحتوى لمنع التحذير
         super().__init__(command_prefix="!", intents=intents)
 
     async def setup_hook(self):
@@ -174,30 +175,61 @@ async def active_now(interaction: discord.Interaction):
 
     await interaction.followup.send(embed=embed)
 
-# أمر الجرد الأسبوعي
-@bot.tree.command(name="stats_weekly", description="جرد ساعات الحضور الأسبوعية للجميع")
+# أمر الجرد والتفاصيل لآخر 5 أيام
+@bot.tree.command(name="stats_weekly", description="عرض تفاصيل الحضور اليومية لآخر 5 أيام")
 @app_commands.checks.has_permissions(administrator=True)
 async def stats_weekly(interaction: discord.Interaction):
     await interaction.response.defer()
-    week_ago = datetime.now() - timedelta(days=7)
+    
+    five_days_ago = datetime.now() - timedelta(days=5)
+    
     async with aiosqlite.connect(DB_NAME) as db:
         async with db.execute("""
-            SELECT user_name, type, SUM(duration_minutes) 
+            SELECT user_id, user_name, type, DATE(start_time) as log_date, duration_minutes 
             FROM attendance 
-            WHERE start_time >= ? AND duration_minutes > 0 
-            GROUP BY user_id 
-            ORDER BY SUM(duration_minutes) DESC
-        """, (week_ago,)) as cursor:
+            WHERE start_time >= ? AND duration_minutes > 0
+            ORDER BY start_time DESC
+        """, (five_days_ago,)) as cursor:
             rows = await cursor.fetchall()
 
     if not rows:
-        await interaction.followup.send("لا توجد سجلات حضور خلال الـ 7 أيام الماضية.", ephemeral=True)
+        await interaction.followup.send("لا توجد سجلات حضور خلال الـ 5 أيام الأخيرة.", ephemeral=True)
         return
 
-    embed = discord.Embed(title="📊 الجرد والساعات الأسبوعية", color=discord.Color.purple())
-    for name, r_type, total_mins in rows:
-        h, m = divmod(total_mins or 0, 60)
-        embed.add_field(name=f"{name} [{r_type}]", value=f"⏳ إجمالي الحضور: `{h} ساعة و {m} دقيقة`", inline=False)
+    # تنظيم البيانات حسب كل مستخدم
+    user_data = {}
+    for u_id, u_name, r_type, log_date, duration in rows:
+        if u_id not in user_data:
+            user_data[u_id] = {
+                'name': u_name,
+                'type': r_type,
+                'dates': {},
+                'total_mins': 0
+            }
+        
+        dur = duration or 0
+        user_data[u_id]['dates'][log_date] = user_data[u_id]['dates'].get(log_date, 0) + dur
+        user_data[u_id]['total_mins'] += dur
+
+    embed = discord.Embed(
+        title="📊 إحصائيات الحضور التفصيلية (آخر 5 أيام)",
+        color=discord.Color.purple()
+    )
+
+    for u_id, data in user_data.items():
+        tot_hrs, tot_mins = divmod(data['total_mins'], 60)
+        
+        details = ""
+        for date_str, mins in sorted(data['dates'].items(), reverse=True):
+            d_hrs, d_mins = divmod(mins, 60)
+            details += f"• `{date_str}`: **{d_hrs}** ساعة و **{d_mins}** دقيقة\n"
+
+        field_value = f"**المجموع:** `{tot_hrs} ساعة و {tot_mins} دقيقة` (في {len(data['dates'])} أيام)\n{details}"
+        embed.add_field(
+            name=f"👤 {data['name']} [{data['type']}]", 
+            value=field_value, 
+            inline=False
+        )
 
     await interaction.followup.send(embed=embed)
 
