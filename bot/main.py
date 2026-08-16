@@ -134,22 +134,22 @@ bot = AttendanceBot()
 async def on_ready():
     print(f"Logged in as {bot.user.name} ({bot.user.id})")
 
-# أوامر تنزيل الكروت
-@bot.tree.command(name="setup_individuals", description="تنزيل كرت تحضير الأفراد")
+# أوامر تنزيل التحضير
+@bot.tree.command(name="setup_individuals", description="تنزيل تحضير الأفراد")
 @app_commands.checks.has_permissions(administrator=True)
 async def setup_ind(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
-    embed = discord.Embed(title="📋 كرت تحضير الأفراد", description="اضغط الأزرار بالأسفل لتسجيل الدخول أو الخروج", color=discord.Color.blue())
+    embed = discord.Embed(title="📋 تحضير الأفراد", description="اضغط الأزرار بالأسفل لتسجيل الدخول أو الخروج", color=discord.Color.blue())
     await interaction.channel.send(embed=embed, view=AttendanceView("أفراد"))
-    await interaction.followup.send("تم إرسال الكرت بنجاح!", ephemeral=True)
+    await interaction.followup.send("تم إرسال التحضير بنجاح!", ephemeral=True)
 
-@bot.tree.command(name="setup_officers", description="تنزيل كرت تحضير الضباط")
+@bot.tree.command(name="setup_officers", description="تنزيل تحضير الضباط")
 @app_commands.checks.has_permissions(administrator=True)
 async def setup_off(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
-    embed = discord.Embed(title="👮‍♂️ كرت تحضير الضباط", description="اضغط الأزرار بالأسفل لتسجيل الدخول أو الخروج", color=discord.Color.gold())
+    embed = discord.Embed(title="👮‍♂️ تحضير الضباط", description="اضغط الأزرار بالأسفل لتسجيل الدخول أو الخروج", color=discord.Color.gold())
     await interaction.channel.send(embed=embed, view=AttendanceView("ضباط"))
-    await interaction.followup.send("تم إرسال الكرت بنجاح!", ephemeral=True)
+    await interaction.followup.send("تم إرسال التحضير بنجاح!", ephemeral=True)
 
 # أمر عرض المتواجدين حالياً
 @bot.tree.command(name="active_now", description="عرض المسجلين دخول حالياً ومدة تواجدهم")
@@ -204,7 +204,6 @@ async def force_checkout(interaction: discord.Interaction, user: discord.Member,
             hours, mins = divmod(duration, 60)
             msg = f"🚨 **إنهاء تحضير:** تم إنهاء جلسة {user.mention} بواسطة الإدارة.\n⏱️ **مدة الجلسة المحسوبة:** `{hours} ساعة و {mins} دقيقة`"
         else:
-            # إلغاء الجلسة بالكامل وحذفها
             await db.execute("DELETE FROM attendance WHERE rowid = ?", (row_id,))
             await db.commit()
             msg = f"⛔ **طرد وإلغاء تحضير:** تم إخراج {user.mention} وإلغاء الجلسة الحالية بدون احتساب أي ساعات!"
