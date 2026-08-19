@@ -174,6 +174,42 @@ async def active_now(interaction: discord.Interaction):
 
     await interaction.followup.send(embed=embed)
 
+# ➕ أمر إضافة ساعات يدوياً لعضو (إداري)
+@bot.tree.command(name="add_hours", description="إضافة ساعات تحضير يدوياً لعضو")
+@app_commands.checks.has_permissions(administrator=True)
+@app_commands.describe(
+    user="العضو المراد إضافة الساعات له",
+    hours="عدد الساعات المراد إضافتها",
+    minutes="عدد الدقائق المراد إضافتها (اختياري)"
+)
+async def add_hours(interaction: discord.Interaction, user: discord.Member, hours: int = 0, minutes: int = 0):
+    await interaction.response.defer()
+
+    total_added_minutes = (hours * 60) + minutes
+
+    if total_added_minutes <= 0:
+        await interaction.followup.send("❌ يجب أن تدخل عدداً أكبر من صفر للساعات أو الدقائق!", ephemeral=True)
+        return
+
+    now = datetime.now()
+    # إنشاء وقت وهمي لبداية الجلسة يتطابق مع الوقت المضاف
+    fake_start_time = now - timedelta(minutes=total_added_minutes)
+
+    async with aiosqlite.connect(DB_NAME) as db:
+        await db.execute(
+            "INSERT INTO attendance (user_id, user_name, type, start_time, end_time, duration_minutes) VALUES (?, ?, ?, ?, ?, ?)",
+            (user.id, user.display_name, "إضافة إدارية", fake_start_time.isoformat(), now.isoformat(), total_added_minutes)
+        )
+        await db.commit()
+
+    embed = discord.Embed(
+        title="➕ تم إضافة ساعات تحضير",
+        description=f"تمت إضافة **{hours}** ساعة و **{minutes}** دقيقة إلى حساب {user.mention} بنجاح!",
+        color=discord.Color.green()
+    )
+    embed.add_field(name="المشرف المسؤول", value=interaction.user.mention, inline=False)
+    await interaction.followup.send(embed=embed)
+
 # 🔨 أمر طرد أو إخراج عضو مسجل دخول حالياً (إداري)
 @bot.tree.command(name="force_checkout", description="طرد أو إنهاء تحضير عضو مسجل دخول")
 @app_commands.checks.has_permissions(administrator=True)
