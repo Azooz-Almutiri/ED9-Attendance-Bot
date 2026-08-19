@@ -115,9 +115,8 @@ class AttendanceBot(commands.Bot):
 
     async def setup_hook(self):
         await init_db()
-        self.add_view(AttendanceView("إدارة"))
-        self.add_view(AttendanceView("داخلية"))
-        self.add_view(AttendanceView("عصابات"))
+        self.add_view(AttendanceView("أفراد"))
+        self.add_view(AttendanceView("ضباط"))
 
         app = web.Application()
         app.router.add_get('/', handle)
@@ -147,67 +146,35 @@ async def sync(ctx):
     synced = await bot.tree.sync(guild=ctx.guild)
     await ctx.send(f"✅ تم تزامن {len(synced)} أمر مباشرة مع هذا السيرفر!")
 
-# أوامر تنزيل التحضير للأقسام
-@bot.tree.command(name="setup_admin", description="تنزيل تحضير الإدارة")
+# أوامر تنزيل التحضير
+@bot.tree.command(name="setup_individuals", description="تنزيل تحضير الأفراد")
 @app_commands.checks.has_permissions(administrator=True)
-async def setup_admin(interaction: discord.Interaction):
+async def setup_ind(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
-    embed = discord.Embed(title="🛡️ تحضير قطاع الإدارة", description="اضغط الأزرار بالأسفل لتسجيل الدخول أو الخروج", color=discord.Color.red())
-    await interaction.channel.send(embed=embed, view=AttendanceView("إدارة"))
-    await interaction.followup.send("تم إرسال تحضير الإدارة بنجاح!", ephemeral=True)
+    embed = discord.Embed(title="📋 تحضير الأفراد", description="اضغط الأزرار بالأسفل لتسجيل الدخول أو الخروج", color=discord.Color.blue())
+    await interaction.channel.send(embed=embed, view=AttendanceView("أفراد"))
+    await interaction.followup.send("تم إرسال التحضير بنجاح!", ephemeral=True)
 
-@bot.tree.command(name="setup_moi", description="تنزيل تحضير وزارة الداخلية")
+@bot.tree.command(name="setup_officers", description="تنزيل تحضير الضباط")
 @app_commands.checks.has_permissions(administrator=True)
-async def setup_moi(interaction: discord.Interaction):
+async def setup_off(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
-    embed = discord.Embed(title="👮‍♂️ تحضير وزارة الداخلية", description="اضغط الأزرار بالأسفل لتسجيل الدخول أو الخروج", color=discord.Color.blue())
-    await interaction.channel.send(embed=embed, view=AttendanceView("داخلية"))
-    await interaction.followup.send("تم إرسال تحضير الداخلية بنجاح!", ephemeral=True)
-
-@bot.tree.command(name="setup_gangs", description="تنزيل تحضير العصابات")
-@app_commands.checks.has_permissions(administrator=True)
-async def setup_gangs(interaction: discord.Interaction):
-    await interaction.response.defer(ephemeral=True)
-    embed = discord.Embed(title="🏴‍☠️ تحضير قطاع العصابات", description="اضغط الأزرار بالأسفل لتسجيل الدخول أو الخروج", color=discord.Color.dark_gray())
-    await interaction.channel.send(embed=embed, view=AttendanceView("عصابات"))
-    await interaction.followup.send("تم إرسال تحضير العصابات بنجاح!", ephemeral=True)
-
-# أمر عرض المتواجدين حالياً
-@bot.tree.command(name="active_now", description="عرض المسجلين دخول حالياً ومدة تواجدهم")
-@app_commands.checks.has_permissions(administrator=True)
-async def active_now(interaction: discord.Interaction):
-    await interaction.response.defer()
-    now = datetime.now()
-    async with aiosqlite.connect(DB_NAME) as db:
-        async with db.execute("SELECT user_name, type, start_time FROM attendance WHERE end_time IS NULL") as cursor:
-            rows = await cursor.fetchall()
-
-    if not rows:
-        await interaction.followup.send("لا يوجد أي شخص مسجل دخول حالياً.", ephemeral=True)
-        return
-
-    embed = discord.Embed(title="🟢 قائمة المتواجدين حالياً", color=discord.Color.green())
-    for name, r_type, start_str in rows:
-        start_time = datetime.fromisoformat(str(start_str))
-        duration = int((now - start_time).total_seconds() // 60)
-        h, m = divmod(duration, 60)
-        embed.add_field(name=f"{name} [{r_type}]", value=f"⏱️ متواجد منذ: `{h} ساعة و {m} دقيقة`", inline=False)
-
-    await interaction.followup.send(embed=embed)
+    embed = discord.Embed(title="👮‍♂️ تحضير الضباط", description="اضغط الأزرار بالأسفل لتسجيل الدخول أو الخروج", color=discord.Color.gold())
+    await interaction.channel.send(embed=embed, view=AttendanceView("ضباط"))
+    await interaction.followup.send("تم إرسال التحضير بنجاح!", ephemeral=True)
 
 # ➕ أمر إضافة ساعات يدوياً لعضو مع اختيار القسم (إداري)
 @bot.tree.command(name="add_hours", description="إضافة ساعات تحضير يدوياً لعضو مع اختيار القسم")
 @app_commands.checks.has_permissions(administrator=True)
 @app_commands.describe(
     user="العضو المراد إضافة الساعات له",
-    category="اختر القسم (إدارة / داخلية / عصابات)",
+    category="اختر القسم (أفراد / ضباط)",
     hours="عدد الساعات المراد إضافتها",
     minutes="عدد الدقائق المراد إضافتها (اختياري)"
 )
 @app_commands.choices(category=[
-    app_commands.Choice(name="إدارة", value="إدارة"),
-    app_commands.Choice(name="داخلية", value="داخلية"),
-    app_commands.Choice(name="عصابات", value="عصابات")
+    app_commands.Choice(name="أفراد", value="أفراد"),
+    app_commands.Choice(name="ضباط", value="ضباط")
 ])
 async def add_hours(interaction: discord.Interaction, user: discord.Member, category: str, hours: int = 0, minutes: int = 0):
     await interaction.response.defer()
@@ -234,6 +201,29 @@ async def add_hours(interaction: discord.Interaction, user: discord.Member, cate
         color=discord.Color.green()
     )
     embed.add_field(name="المشرف المسؤول", value=interaction.user.mention, inline=False)
+    await interaction.followup.send(embed=embed)
+
+# أمر عرض المتواجدين حالياً
+@bot.tree.command(name="active_now", description="عرض المسجلين دخول حالياً ومدة تواجدهم")
+@app_commands.checks.has_permissions(administrator=True)
+async def active_now(interaction: discord.Interaction):
+    await interaction.response.defer()
+    now = datetime.now()
+    async with aiosqlite.connect(DB_NAME) as db:
+        async with db.execute("SELECT user_name, type, start_time FROM attendance WHERE end_time IS NULL") as cursor:
+            rows = await cursor.fetchall()
+
+    if not rows:
+        await interaction.followup.send("لا يوجد أي شخص مسجل دخول حالياً.", ephemeral=True)
+        return
+
+    embed = discord.Embed(title="🟢 قائمة المتواجدين حالياً", color=discord.Color.green())
+    for name, r_type, start_str in rows:
+        start_time = datetime.fromisoformat(str(start_str))
+        duration = int((now - start_time).total_seconds() // 60)
+        h, m = divmod(duration, 60)
+        embed.add_field(name=f"{name} ({r_type})", value=f"⏱️ متواجد منذ: `{h} ساعة و {m} دقيقة`", inline=False)
+
     await interaction.followup.send(embed=embed)
 
 # 🔨 أمر طرد أو إخراج عضو مسجل دخول حالياً (إداري)
