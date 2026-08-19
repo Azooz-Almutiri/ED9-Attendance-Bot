@@ -115,9 +115,9 @@ class AttendanceBot(commands.Bot):
 
     async def setup_hook(self):
         await init_db()
-        self.add_view(AttendanceView("أفراد"))
-        self.add_view(AttendanceView("ضباط"))
-        await self.tree.sync()
+        self.add_view(AttendanceView("إدارة"))
+        self.add_view(AttendanceView("داخلية"))
+        self.add_view(AttendanceView("عصابات"))
 
         app = web.Application()
         app.router.add_get('/', handle)
@@ -133,23 +133,44 @@ bot = AttendanceBot()
 @bot.event
 async def on_ready():
     print(f"Logged in as {bot.user.name} ({bot.user.id})")
+    try:
+        synced = await bot.tree.sync()
+        print(f"✅ Global sync: {len(synced)} commands registered.")
+    except Exception as e:
+        print(f"❌ Failed to global sync: {e}")
 
-# أوامر تنزيل التحضير
-@bot.tree.command(name="setup_individuals", description="تنزيل تحضير الأفراد")
-@app_commands.checks.has_permissions(administrator=True)
-async def setup_ind(interaction: discord.Interaction):
-    await interaction.response.defer(ephemeral=True)
-    embed = discord.Embed(title="📋 تحضير الأفراد", description="اضغط الأزرار بالأسفل لتسجيل الدخول أو الخروج", color=discord.Color.blue())
-    await interaction.channel.send(embed=embed, view=AttendanceView("أفراد"))
-    await interaction.followup.send("تم إرسال التحضير بنجاح!", ephemeral=True)
+# أمر تزامن يدوي إجباري لربط جميع السلاش كمند بالسيرفر فوراً
+@bot.command(name="sync")
+@commands.has_permissions(administrator=True)
+async def sync(ctx):
+    bot.tree.copy_global_to(guild=ctx.guild)
+    synced = await bot.tree.sync(guild=ctx.guild)
+    await ctx.send(f"✅ تم تزامن {len(synced)} أمر مباشرة مع هذا السيرفر!")
 
-@bot.tree.command(name="setup_officers", description="تنزيل تحضير الضباط")
+# أوامر تنزيل التحضير للأقسام
+@bot.tree.command(name="setup_admin", description="تنزيل تحضير الإدارة")
 @app_commands.checks.has_permissions(administrator=True)
-async def setup_off(interaction: discord.Interaction):
+async def setup_admin(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
-    embed = discord.Embed(title="👮‍♂️ تحضير الضباط", description="اضغط الأزرار بالأسفل لتسجيل الدخول أو الخروج", color=discord.Color.gold())
-    await interaction.channel.send(embed=embed, view=AttendanceView("ضباط"))
-    await interaction.followup.send("تم إرسال التحضير بنجاح!", ephemeral=True)
+    embed = discord.Embed(title="🛡️ تحضير قطاع الإدارة", description="اضغط الأزرار بالأسفل لتسجيل الدخول أو الخروج", color=discord.Color.red())
+    await interaction.channel.send(embed=embed, view=AttendanceView("إدارة"))
+    await interaction.followup.send("تم إرسال تحضير الإدارة بنجاح!", ephemeral=True)
+
+@bot.tree.command(name="setup_moi", description="تنزيل تحضير وزارة الداخلية")
+@app_commands.checks.has_permissions(administrator=True)
+async def setup_moi(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+    embed = discord.Embed(title="👮‍♂️ تحضير وزارة الداخلية", description="اضغط الأزرار بالأسفل لتسجيل الدخول أو الخروج", color=discord.Color.blue())
+    await interaction.channel.send(embed=embed, view=AttendanceView("داخلية"))
+    await interaction.followup.send("تم إرسال تحضير الداخلية بنجاح!", ephemeral=True)
+
+@bot.tree.command(name="setup_gangs", description="تنزيل تحضير العصابات")
+@app_commands.checks.has_permissions(administrator=True)
+async def setup_gangs(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+    embed = discord.Embed(title="🏴‍☠️ تحضير قطاع العصابات", description="اضغط الأزرار بالأسفل لتسجيل الدخول أو الخروج", color=discord.Color.dark_gray())
+    await interaction.channel.send(embed=embed, view=AttendanceView("عصابات"))
+    await interaction.followup.send("تم إرسال تحضير العصابات بنجاح!", ephemeral=True)
 
 # أمر عرض المتواجدين حالياً
 @bot.tree.command(name="active_now", description="عرض المسجلين دخول حالياً ومدة تواجدهم")
@@ -170,7 +191,7 @@ async def active_now(interaction: discord.Interaction):
         start_time = datetime.fromisoformat(str(start_str))
         duration = int((now - start_time).total_seconds() // 60)
         h, m = divmod(duration, 60)
-        embed.add_field(name=f"{name} ({r_type})", value=f"⏱️ متواجد منذ: `{h} ساعة و {m} دقيقة`", inline=False)
+        embed.add_field(name=f"{name} [{r_type}]", value=f"⏱️ متواجد منذ: `{h} ساعة و {m} دقيقة`", inline=False)
 
     await interaction.followup.send(embed=embed)
 
