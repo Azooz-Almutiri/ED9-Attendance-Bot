@@ -137,7 +137,7 @@ async def on_ready():
     except Exception as e:
         print(f"❌ Failed to global sync: {e}")
 
-# أمر تزامن يدوي إجباري لربط جميع السلاش كمند بالسيرفر فوراً
+# أمر تزامن يدوي إجباري
 @bot.command(name="sync")
 @commands.has_permissions(administrator=True)
 async def sync(ctx):
@@ -145,52 +145,119 @@ async def sync(ctx):
     synced = await bot.tree.sync(guild=ctx.guild)
     await ctx.send(f"✅ تم تزامن {len(synced)} أمر مباشرة مع هذا السيرفر!")
 
-# ==================== الأوامر الخاصة بعائلة GODFATHER ====================
+# ==================== أوامر الخزائن والجرد المباشر ====================
 
-# 1️⃣ أمر جرد الموارد المباشر (خزنة الحداد)
-@bot.tree.command(name="inventory", description="إرسال جرد كامل للموارد بقيم محددة")
+# 1️⃣ أمر جرد خزنة الحداد (كتابة يدوي)
+@bot.tree.command(name="inventory", description="إرسال جرد لخزنة الحداد")
 @app_commands.describe(
-    fibers="ألياف نباتية",
-    oil_barrels="برميل نفت",
-    sandstone="حجر رملي",
-    gold_shoes="حذوات ذهبيه",
-    iron_ore="خام الحديد",
-    quartz_ore="خام الكوارتز",
-    copper_ore="خام النحاس",
-    ruby_ore="خام الياقوت",
-    steel_ore="خام فولاذ",
-    wood="خشب"
+    item_1="اسم المورد الأول", amount_1="الكمية",
+    item_2="اسم المورد الثاني (اختياري)", amount_2="الكمية",
+    item_3="اسم المورد الثالث (اختياري)", amount_3="الكمية",
+    item_4="اسم المورد الرابع (اختياري)", amount_4="الكمية",
+    item_5="اسم المورد الخامس (اختياري)", amount_5="الكمية"
 )
 async def inventory(
     interaction: discord.Interaction,
-    fibers: int = 0,
-    oil_barrels: int = 0,
-    sandstone: int = 0,
-    gold_shoes: int = 0,
-    iron_ore: int = 0,
-    quartz_ore: int = 0,
-    copper_ore: int = 0,
-    ruby_ore: int = 0,
-    steel_ore: int = 0,
-    wood: int = 0
+    item_1: str, amount_1: int,
+    item_2: str = None, amount_2: int = 0,
+    item_3: str = None, amount_3: int = 0,
+    item_4: str = None, amount_4: int = 0,
+    item_5: str = None, amount_5: int = 0
 ):
     await interaction.response.defer()
-    inventory_text = (
-        f"📋 **خزنة الحداد**\n\n"
-        f"• **ألياف نباتية :** {fibers:,}\n\n"
-        f"• **برميل نفت :** {oil_barrels:,}\n\n"
-        f"• **حجر رملي :** {sandstone:,}\n\n"
-        f"• **حذوات ذهبيه :** {gold_shoes:,}\n\n"
-        f"• **خام الحديد :** {iron_ore:,}\n\n"
-        f"• **خام الكوارتز :** {quartz_ore:,}\n\n"
-        f"• **خام النحاس :** {copper_ore:,}\n\n"
-        f"• **خام الياقوت :** {ruby_ore:,}\n\n"
-        f"• **خام فولاذ :** {steel_ore:,}\n\n"
-        f"• **خشب :** {wood:,}"
-    )
-    await interaction.followup.send(inventory_text)
+    items_list = [(item_1, amount_1), (item_2, amount_2), (item_3, amount_3), (item_4, amount_4), (item_5, amount_5)]
+    
+    text = "📋 **خزنة الحداد**\n\n"
+    for name, qty in items_list:
+        if name:
+            text += f"• **{name} :** {qty:,}\n\n"
+            
+    await interaction.followup.send(text)
 
-# 2️⃣ أمر الخيول المتوفرة (مُحديث بالخيول العربية)
+# 2️⃣ أمر جرد خزنة الستور (كتابة يدوي)
+@bot.tree.command(name="store_inv", description="إرسال جرد لخزنة الستور")
+@app_commands.describe(
+    item_1="اسم الغرض الأول", amount_1="الكمية",
+    item_2="اسم الغرض الثاني (اختياري)", amount_2="الكمية",
+    item_3="اسم الغرض الثالث (اختياري)", amount_3="الكمية",
+    item_4="اسم الغرض الرابع (اختياري)", amount_4="الكمية",
+    item_5="اسم الغرض الخامس (اختياري)", amount_5="الكمية"
+)
+async def store_inv(
+    interaction: discord.Interaction,
+    item_1: str, amount_1: int,
+    item_2: str = None, amount_2: int = 0,
+    item_3: str = None, amount_3: int = 0,
+    item_4: str = None, amount_4: int = 0,
+    item_5: str = None, amount_5: int = 0
+):
+    await interaction.response.defer()
+    items_list = [(item_1, amount_1), (item_2, amount_2), (item_3, amount_3), (item_4, amount_4), (item_5, amount_5)]
+    
+    text = "📋 **خزنة الستور**\n\n"
+    for name, qty in items_list:
+        if name:
+            text += f"• **{name} :** {qty:,}\n\n"
+            
+    await interaction.followup.send(text)
+
+# 3️⃣ أمر جرد خزنة الأسلحة (كتابة يدوي)
+@bot.tree.command(name="weapons_inv", description="إرسال جرد لخزنة محل الأسلحة")
+@app_commands.describe(
+    item_1="اسم السلاح/الذخيرة الأول", amount_1="الكمية",
+    item_2="اسم السلاح/الذخيرة الثاني (اختياري)", amount_2="الكمية",
+    item_3="اسم السلاح/الذخيرة الثالث (اختياري)", amount_3="الكمية",
+    item_4="اسم السلاح/الذخيرة الرابع (اختياري)", amount_4="الكمية",
+    item_5="اسم السلاح/الذخيرة الخامس (اختياري)", amount_5="الكمية"
+)
+async def weapons_inv(
+    interaction: discord.Interaction,
+    item_1: str, amount_1: int,
+    item_2: str = None, amount_2: int = 0,
+    item_3: str = None, amount_3: int = 0,
+    item_4: str = None, amount_4: int = 0,
+    item_5: str = None, amount_5: int = 0
+):
+    await interaction.response.defer()
+    items_list = [(item_1, amount_1), (item_2, amount_2), (item_3, amount_3), (item_4, amount_4), (item_5, amount_5)]
+    
+    text = "📋 **خزنة محل الاسلحة**\n\n"
+    for name, qty in items_list:
+        if name:
+            text += f"• **{name} :** {qty:,}\n\n"
+            
+    await interaction.followup.send(text)
+
+# 4️⃣ أمر جرد خزنة الحانة (كتابة يدوي)
+@bot.tree.command(name="bar_inv", description="إرسال جرد لخزنة الحانة")
+@app_commands.describe(
+    item_1="اسم المشروب/الغرض الأول", amount_1="الكمية",
+    item_2="اسم المشروب/الغرض الثاني (اختياري)", amount_2="الكمية",
+    item_3="اسم المشروب/الغرض الثالث (اختياري)", amount_3="الكمية",
+    item_4="اسم المشروب/الغرض الرابع (اختياري)", amount_4="الكمية",
+    item_5="اسم المشروب/الغرض الخامس (اختياري)", amount_5="الكمية"
+)
+async def bar_inv(
+    interaction: discord.Interaction,
+    item_1: str, amount_1: int,
+    item_2: str = None, amount_2: int = 0,
+    item_3: str = None, amount_3: int = 0,
+    item_4: str = None, amount_4: int = 0,
+    item_5: str = None, amount_5: int = 0
+):
+    await interaction.response.defer()
+    items_list = [(item_1, amount_1), (item_2, amount_2), (item_3, amount_3), (item_4, amount_4), (item_5, amount_5)]
+    
+    text = "📋 **خزنة الحانة**\n\n"
+    for name, qty in items_list:
+        if name:
+            text += f"• **{name} :** {qty:,}\n\n"
+            
+    await interaction.followup.send(text)
+
+# ==================== الأوامر العامة والتعريفية ====================
+
+# أمر الخيول المتوفرة
 @bot.tree.command(name="horses", description="إرسال قائمة الخيول المتوفرة لدى عائلة القودفاذر")
 async def horses(interaction: discord.Interaction):
     await interaction.response.defer()
@@ -206,42 +273,42 @@ async def horses(interaction: discord.Interaction):
     )
     await interaction.followup.send(horses_text)
 
-# 3️⃣ أمر خزنة الحداد
+# أمر إمبد خزنة الحداد
 @bot.tree.command(name="blacksmith", description="عرض خزنة الحداد")
 async def blacksmith(interaction: discord.Interaction):
     embed = discord.Embed(title="🔨 خزنة الحداد - GODFATHER FAMILY", color=discord.Color.dark_gray())
     embed.description = "قائمة الموارد والمعادن المخصصة للحدادة والتصنيع."
     await interaction.response.send_message(embed=embed)
 
-# 4️⃣ أمر خزنة محل الأسلحة
+# أمر إمبد خزنة محل الأسلحة
 @bot.tree.command(name="weapons", description="عرض خزنة محل الأسلحة")
 async def weapons(interaction: discord.Interaction):
     embed = discord.Embed(title="⚔️ خزنة محل الاسلحة - GODFATHER FAMILY", color=discord.Color.dark_red())
     embed.description = "قائمة الذخائر والأسلحة المتوفرة في الخزنة."
     await interaction.response.send_message(embed=embed)
 
-# 5️⃣ أمر خزنة الستور (متجر العائلة)
+# أمر إمبد خزنة الستور
 @bot.tree.command(name="store", description="عرض خزنة الستور")
 async def store(interaction: discord.Interaction):
     embed = discord.Embed(title="🛒 خزنة الستور - GODFATHER FAMILY", color=discord.Color.gold())
     embed.description = "قائمة الأغراض والمنتجات المتاحة للشراء أو التوزيع."
     await interaction.response.send_message(embed=embed)
 
-# 6️⃣ أمر خزنة الحانة
+# أمر إمبد خزنة الحانة
 @bot.tree.command(name="bar", description="عرض خزنة الحانة")
 async def bar(interaction: discord.Interaction):
     embed = discord.Embed(title="🍺 خزنة الحانة - GODFATHER FAMILY", color=discord.Color.dark_purple())
     embed.description = "قائمة المشروبات والمستلزمات الخاصة بالحانة."
     await interaction.response.send_message(embed=embed)
 
-# 7️⃣ أمر التقديم على العائلة
+# أمر التقديم
 @bot.tree.command(name="apply", description="عرض طريقة التقديم للانضمام لعائلة القودفاذر")
 async def apply(interaction: discord.Interaction):
     embed = discord.Embed(title="📜 التقديم على عائلة GODFATHER", color=discord.Color.red())
     embed.description = "مرحباً بك! للانضمام إلى العائلة، يرجى فتح تذكرة تقديم وتعبئة البيانات المطلوبة ليتم مراجعتها من قبل الإدارة."
     await interaction.response.send_message(embed=embed)
 
-# 8️⃣ أمر تنزيل لوحة التحضير
+# أمر تنزيل لوحة التحضير
 @bot.tree.command(name="setup_attendance", description="تنزيل لوحة التحضير الموقتة للعائلة")
 @app_commands.checks.has_permissions(administrator=True)
 async def setup_attendance(interaction: discord.Interaction):
