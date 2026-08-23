@@ -26,7 +26,7 @@ async def init_db():
                 duration_minutes INTEGER DEFAULT 0
             )
         ''')
-        # جدول الجرد والخزائن الجديد
+        # جدول الجرد والخزائن
         await db.execute('''
             CREATE TABLE IF NOT EXISTS inventory (
                 vault_name TEXT,
@@ -155,18 +155,22 @@ async def sync(ctx):
     synced = await bot.tree.sync(guild=ctx.guild)
     await ctx.send(f"✅ تم تزامن {len(synced)} أمر مباشرة مع هذا السيرفر!")
 
-# ==================== دالة مساعدة لتحديث الجرد في قاعدة البيانات ====================
-async def save_inventory_data(vault_name: str, items_list: list):
+# ==================== دالة مساعدة لتحديث الخزائن (إضافة / إخصام) ====================
+async def update_inventory_data(vault_name: str, items_list: list):
     async with aiosqlite.connect(DB_NAME) as db:
-        # مسح الجرد القديم للخزنة المحددة
-        await db.execute("DELETE FROM inventory WHERE vault_name = ?", (vault_name,))
-        # إدخال المواد الجديدة
         for name, qty in items_list:
-            if name and qty > 0:
-                await db.execute(
-                    "INSERT INTO inventory (vault_name, item_name, amount) VALUES (?, ?, ?)",
-                    (vault_name, name, qty)
-                )
+            if name and qty != 0:
+                clean_name = name.strip()
+                # إضافة الكمية إلى الكمية السابقة، أو إنشاء عنصر جديد إذا لم يكن موجوداً
+                await db.execute('''
+                    INSERT INTO inventory (vault_name, item_name, amount) 
+                    VALUES (?, ?, ?)
+                    ON CONFLICT(vault_name, item_name) 
+                    DO UPDATE SET amount = amount + excluded.amount
+                ''', (vault_name, clean_name, qty))
+        
+        # تنظيف تلقائي: مسح الموارد التي وصلت كميتها إلى صفر أو أقل بعد الخصم
+        await db.execute("DELETE FROM inventory WHERE vault_name = ? AND amount <= 0", (vault_name,))
         await db.commit()
 
 # دالة مساعدة لإنشاء الـ Embed الخاص ببطاقات الخزائن
@@ -174,7 +178,7 @@ async def build_vault_embed(vault_name: str, title: str, description: str, color
     embed = discord.Embed(title=title, description=description, color=color)
     
     async with aiosqlite.connect(DB_NAME) as db:
-        async with db.execute("SELECT item_name, amount FROM inventory WHERE vault_name = ?", (vault_name,)) as cursor:
+        async with db.execute("SELECT item_name, amount FROM inventory WHERE vault_name = ? AND amount > 0 ORDER BY item_name ASC", (vault_name,)) as cursor:
             items = await cursor.fetchall()
             
     if items:
@@ -187,12 +191,12 @@ async def build_vault_embed(vault_name: str, title: str, description: str, color
         
     return embed
 
-# ==================== أوامر إدخال الجرد (تطبيقي) ====================
+# ==================== أوامر إدخال وتعديل الجرد ====================
 
 # 1️⃣ أمر جرد خزنة الحداد
-@bot.tree.command(name="inventory", description="تحديث وتسجيل جرد خزنة الحداد")
+@bot.tree.command(name="inventory", description="إضافة أو خصم (بالسالب) موارد خزنة الحداد")
 @app_commands.describe(
-    item_1="اسم المورد الأول", amount_1="الكمية",
+    item_1="اسم المورد الأول", amount_1="الكمية (موجب للإضافة / سالب للخصم)",
     item_2="اسم المورد الثاني (اختياري)", amount_2="الكمية",
     item_3="اسم المورد الثالث (اختياري)", amount_3="الكمية",
     item_4="اسم المورد الرابع (اختياري)", amount_4="الكمية",
@@ -208,15 +212,15 @@ async def inventory(
 ):
     await interaction.response.defer()
     items_list = [(item_1, amount_1), (item_2, amount_2), (item_3, amount_3), (item_4, amount_4), (item_5, amount_5)]
-    await save_inventory_data("blacksmith", items_list)
+    await update_inventory_data("blacksmith", items_list)
     
-    embed = await build_vault_embed("blacksmith", "🔨 خزنة الحداد - GODFATHER FAMILY", "تم تحديث قائمة الموارد والمعادن المخصصة للحدادة والتصنيع بنجاح.", discord.Color.dark_gray())
-    await interaction.followup.send(content="✅ **تم تحديث جرد خزنة الحداد بنجاح!**", embed=embed)
+    embed = await build_vault_embed("blacksmith", "🔨 خزنة الحداد - GODFATHER FAMILY", "تم تحديث جرد الموارد بنجاح.", discord.Color.dark_gray())
+    await interaction.followup.send(content="✅ **تم تحديث خزنة الحداد!**", embed=embed)
 
 # 2️⃣ أمر جرد خزنة الستور
-@bot.tree.command(name="store_inv", description="تحديث وتسجيل جرد خزنة الستور")
+@bot.tree.command(name="store_inv", description="إضافة أو خصم (بالسالب) أغراض خزنة الستور")
 @app_commands.describe(
-    item_1="اسم الغرض الأول", amount_1="الكمية",
+    item_1="اسم الغرض الأول", amount_1="الكمية (موجب للإضافة / سالب للخصم)",
     item_2="اسم الغرض الثاني (اختياري)", amount_2="الكمية",
     item_3="اسم الغرض الثالث (اختياري)", amount_3="الكمية",
     item_4="اسم الغرض الرابع (اختياري)", amount_4="الكمية",
@@ -232,15 +236,15 @@ async def store_inv(
 ):
     await interaction.response.defer()
     items_list = [(item_1, amount_1), (item_2, amount_2), (item_3, amount_3), (item_4, amount_4), (item_5, amount_5)]
-    await save_inventory_data("store", items_list)
+    await update_inventory_data("store", items_list)
     
-    embed = await build_vault_embed("store", "🛒 خزنة الستور - GODFATHER FAMILY", "تم تحديث قائمة الأغراض والمنتجات المتاحة بنجاح.", discord.Color.gold())
-    await interaction.followup.send(content="✅ **تم تحديث جرد خزنة الستور بنجاح!**", embed=embed)
+    embed = await build_vault_embed("store", "🛒 خزنة الستور - GODFATHER FAMILY", "تم تحديث جرد الأغراض بنجاح.", discord.Color.gold())
+    await interaction.followup.send(content="✅ **تم تحديث خزنة الستور!**", embed=embed)
 
 # 3️⃣ أمر جرد خزنة الأسلحة
-@bot.tree.command(name="weapons_inv", description="تحديث وتسجيل جرد خزنة محل الأسلحة")
+@bot.tree.command(name="weapons_inv", description="إضافة أو خصم (بالسالب) أسلحة وذخيرة خزنة الأسلحة")
 @app_commands.describe(
-    item_1="اسم السلاح/الذخيرة الأول", amount_1="الكمية",
+    item_1="اسم السلاح/الذخيرة الأول", amount_1="الكمية (موجب للإضافة / سالب للخصم)",
     item_2="اسم السلاح/الذخيرة الثاني (اختياري)", amount_2="الكمية",
     item_3="اسم السلاح/الذخيرة الثالث (اختياري)", amount_3="الكمية",
     item_4="اسم السلاح/الذخيرة الرابع (اختياري)", amount_4="الكمية",
@@ -256,15 +260,15 @@ async def weapons_inv(
 ):
     await interaction.response.defer()
     items_list = [(item_1, amount_1), (item_2, amount_2), (item_3, amount_3), (item_4, amount_4), (item_5, amount_5)]
-    await save_inventory_data("weapons", items_list)
+    await update_inventory_data("weapons", items_list)
     
-    embed = await build_vault_embed("weapons", "⚔️ خزنة محل الاسلحة - GODFATHER FAMILY", "تم تحديث قائمة الذخائر والأسلحة المتوفرة بنجاح.", discord.Color.dark_red())
-    await interaction.followup.send(content="✅ **تم تحديث جرد خزنة الأسلحة بنجاح!**", embed=embed)
+    embed = await build_vault_embed("weapons", "⚔️ خزنة محل الاسلحة - GODFATHER FAMILY", "تم تحديث جرد الأسلحة والذخيرة بنجاح.", discord.Color.dark_red())
+    await interaction.followup.send(content="✅ **تم تحديث خزنة الأسلحة!**", embed=embed)
 
 # 4️⃣ أمر جرد خزنة الحانة
-@bot.tree.command(name="bar_inv", description="تحديث وتسجيل جرد خزنة الحانة")
+@bot.tree.command(name="bar_inv", description="إضافة أو خصم (بالسالب) مشروبات/أغراض خزنة الحانة")
 @app_commands.describe(
-    item_1="اسم المشروب/الغرض الأول", amount_1="الكمية",
+    item_1="اسم المشروب/الغرض الأول", amount_1="الكمية (موجب للإضافة / سالب للخصم)",
     item_2="اسم المشروب/الغرض الثاني (اختياري)", amount_2="الكمية",
     item_3="اسم المشروب/الغرض الثالث (اختياري)", amount_3="الكمية",
     item_4="اسم المشروب/الغرض الرابع (اختياري)", amount_4="الكمية",
@@ -280,12 +284,46 @@ async def bar_inv(
 ):
     await interaction.response.defer()
     items_list = [(item_1, amount_1), (item_2, amount_2), (item_3, amount_3), (item_4, amount_4), (item_5, amount_5)]
-    await save_inventory_data("bar", items_list)
+    await update_inventory_data("bar", items_list)
     
-    embed = await build_vault_embed("bar", "🍺 خزنة الحانة - GODFATHER FAMILY", "تم تحديث قائمة المشروبات والمستلزمات بنجاح.", discord.Color.dark_purple())
-    await interaction.followup.send(content="✅ **تم تحديث جرد خزنة الحانة بنجاح!**", embed=embed)
+    embed = await build_vault_embed("bar", "🍺 خزنة الحانة - GODFATHER FAMILY", "تم تحديث جرد الحانة بنجاح.", discord.Color.dark_purple())
+    await interaction.followup.send(content="✅ **تم تحديث خزنة الحانة!**", embed=embed)
 
-# ==================== الأوامر العامة والتعريفية (تُظهر الجرد تلقائياً) ====================
+# ==================== أوامر الحذف والتصفير ====================
+
+# أمر حذف عنصر معين بالكامل من أي خزنة
+@bot.tree.command(name="remove_item", description="حذف عنصر معين نهائياً من خزنة محددة")
+@app_commands.checks.has_permissions(administrator=True)
+@app_commands.choices(vault=[
+    app_commands.Choice(name="خزنة الحداد (blacksmith)", value="blacksmith"),
+    app_commands.Choice(name="خزنة الستور (store)", value="store"),
+    app_commands.Choice(name="خزنة الأسلحة (weapons)", value="weapons"),
+    app_commands.Choice(name="خزنة الحانة (bar)", value="bar")
+])
+async def remove_item(interaction: discord.Interaction, vault: str, item_name: str):
+    await interaction.response.defer(ephemeral=True)
+    async with aiosqlite.connect(DB_NAME) as db:
+        await db.execute("DELETE FROM inventory WHERE vault_name = ? AND LOWER(item_name) = LOWER(?)", (vault, item_name.strip()))
+        await db.commit()
+    await interaction.followup.send(f"🗑️ تم حذف العنصر `{item_name}` من خزنة `{vault}` بنجاح!", ephemeral=True)
+
+# أمر تصفير خزنة بالكامل
+@bot.tree.command(name="reset_inv", description="تصفير ومسح جرد خزنة معينة بالكامل")
+@app_commands.checks.has_permissions(administrator=True)
+@app_commands.choices(vault=[
+    app_commands.Choice(name="خزنة الحداد (blacksmith)", value="blacksmith"),
+    app_commands.Choice(name="خزنة الستور (store)", value="store"),
+    app_commands.Choice(name="خزنة الأسلحة (weapons)", value="weapons"),
+    app_commands.Choice(name="خزنة الحانة (bar)", value="bar")
+])
+async def reset_inv(interaction: discord.Interaction, vault: str):
+    await interaction.response.defer(ephemeral=True)
+    async with aiosqlite.connect(DB_NAME) as db:
+        await db.execute("DELETE FROM inventory WHERE vault_name = ?", (vault,))
+        await db.commit()
+    await interaction.followup.send(f"🧹 تم تصفير جرد الخزنة `{vault}` بنجاح!", ephemeral=True)
+
+# ==================== الأوامر العامة والتعريفية ====================
 
 @bot.tree.command(name="horses", description="إرسال قائمة الخيول المتوفرة لدى عائلة القودفاذر")
 async def horses(interaction: discord.Interaction):
@@ -302,42 +340,36 @@ async def horses(interaction: discord.Interaction):
     )
     await interaction.followup.send(horses_text)
 
-# أمر إمبد خزنة الحداد (يقرأ الجرد من الداتابيز)
 @bot.tree.command(name="blacksmith", description="عرض خزنة الحداد بالجرد الحالي")
 async def blacksmith(interaction: discord.Interaction):
     await interaction.response.defer()
     embed = await build_vault_embed("blacksmith", "🔨 خزنة الحداد - GODFATHER FAMILY", "قائمة الموارد والمعادن المخصصة للحدادة والتصنيع.", discord.Color.dark_gray())
     await interaction.followup.send(embed=embed)
 
-# أمر إمبد خزنة محل الأسلحة (يقرأ الجرد من الداتابيز)
 @bot.tree.command(name="weapons", description="عرض خزنة محل الأسلحة بالجرد الحالي")
 async def weapons(interaction: discord.Interaction):
     await interaction.response.defer()
     embed = await build_vault_embed("weapons", "⚔️ خزنة محل الاسلحة - GODFATHER FAMILY", "قائمة الذخائر والأسلحة المتوفرة في الخزنة.", discord.Color.dark_red())
     await interaction.followup.send(embed=embed)
 
-# أمر إمبد خزنة الستور (يقرأ الجرد من الداتابيز)
 @bot.tree.command(name="store", description="عرض خزنة الستور بالجرد الحالي")
 async def store(interaction: discord.Interaction):
     await interaction.response.defer()
     embed = await build_vault_embed("store", "🛒 خزنة الستور - GODFATHER FAMILY", "قائمة الأغراض والمنتجات المتاحة للشراء أو التوزيع.", discord.Color.gold())
     await interaction.followup.send(embed=embed)
 
-# أمر إمبد خزنة الحانة (يقرأ الجرد من الداتابيز)
 @bot.tree.command(name="bar", description="عرض خزنة الحانة بالجرد الحالي")
 async def bar(interaction: discord.Interaction):
     await interaction.response.defer()
     embed = await build_vault_embed("bar", "🍺 خزنة الحانة - GODFATHER FAMILY", "قائمة المشروبات والمستلزمات الخاصة بالحانة.", discord.Color.dark_purple())
     await interaction.followup.send(embed=embed)
 
-# أمر التقديم
 @bot.tree.command(name="apply", description="عرض طريقة التقديم للانضمام لعائلة القودفاذر")
 async def apply(interaction: discord.Interaction):
     embed = discord.Embed(title="📜 التقديم على عائلة GODFATHER", color=discord.Color.red())
     embed.description = "مرحباً بك! للانضمام إلى العائلة، يرجى فتح تذكرة تقديم وتعبئة البيانات المطلوبة ليتم مراجعتها من قبل الإدارة."
     await interaction.response.send_message(embed=embed)
 
-# أمر تنزيل لوحة التحضير
 @bot.tree.command(name="setup_attendance", description="تنزيل لوحة التحضير الموقتة للعائلة")
 @app_commands.checks.has_permissions(administrator=True)
 async def setup_attendance(interaction: discord.Interaction):
