@@ -27,7 +27,7 @@ async def init_db():
         ''')
         await db.commit()
 
-# نظام تسجيل الدخول العام (مؤقتاً بدون أفراد وضباط)
+# نظام تسجيل الدخول العام
 class SimpleAttendanceView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
@@ -145,9 +145,9 @@ async def sync(ctx):
     synced = await bot.tree.sync(guild=ctx.guild)
     await ctx.send(f"✅ تم تزامن {len(synced)} أمر مباشرة مع هذا السيرفر!")
 
-# ==================== الأوامر الجديدة الخاصة بعائلة GODFATHER ====================
+# ==================== الأوامر الخاصة بعائلة GODFATHER ====================
 
-# 1️⃣ أمر جرد الموارد المباشر
+# 1️⃣ أمر جرد الموارد المباشر (خزنة الحداد)
 @bot.tree.command(name="inventory", description="إرسال جرد كامل للموارد بقيم محددة")
 @app_commands.describe(
     fibers="ألياف نباتية",
@@ -190,46 +190,47 @@ async def inventory(
     )
     await interaction.followup.send(inventory_text)
 
-# 2️⃣ أمر الخيول المتوفرة
+# 2️⃣ أمر الخيول المتوفرة (مُحديث بالخيول العربية)
 @bot.tree.command(name="horses", description="إرسال قائمة الخيول المتوفرة لدى عائلة القودفاذر")
 async def horses(interaction: discord.Interaction):
     await interaction.response.defer()
     horses_text = (
         "📢 **الخيول المتوفرة لدى العائلة**\n\n"
-        ":يسرنا إبلاغكم بأن الخيول المتوفرة حالياً لدى العائلة هي\n\n"
+        "يسرنا إبلاغكم بأن الخيول المتوفرة حالياً لدى العائلة هي:\n\n"
         "🐎 **شاير — الأبيض والأسود**\n"
         "🐎 **تركماني — الأبيض**\n"
-        "🐎 **ميسوري فوكس تروتر — الأزرق (Blue)**\n\n"
+        "🐎 **ميسوري فوكس تروتر — الأزرق (Blue)**\n"
+        "🐎 **الخيل العربي — أصيل (مختلف الألوان)**\n\n"
         "📨 **لطلب الخيول، يرجى فتح تذكرة والتواصل مع المسؤولين، وسيتم متابعة طلبكم حسب التوفر.**\n\n"
         "@everyone"
     )
     await interaction.followup.send(horses_text)
 
-# 3️⃣ أمر مخزن الحداد
-@bot.tree.command(name="blacksmith", description="عرض مخزن الحداد")
+# 3️⃣ أمر خزنة الحداد
+@bot.tree.command(name="blacksmith", description="عرض خزنة الحداد")
 async def blacksmith(interaction: discord.Interaction):
-    embed = discord.Embed(title="🔨 مخزن الحداد - GODFATHER FAMILY", color=discord.Color.dark_gray())
+    embed = discord.Embed(title="🔨 خزنة الحداد - GODFATHER FAMILY", color=discord.Color.dark_gray())
     embed.description = "قائمة الموارد والمعادن المخصصة للحدادة والتصنيع."
     await interaction.response.send_message(embed=embed)
 
-# 4️⃣ أمر مخزن الأسلحة
-@bot.tree.command(name="weapons", description="عرض مخزن الأسلحة")
+# 4️⃣ أمر خزنة محل الأسلحة
+@bot.tree.command(name="weapons", description="عرض خزنة محل الأسلحة")
 async def weapons(interaction: discord.Interaction):
-    embed = discord.Embed(title="⚔️ مخزن الأسلحة - GODFATHER FAMILY", color=discord.Color.dark_red())
-    embed.description = "قائمة الذخائر والأسلحة المتوفرة في المخزن."
+    embed = discord.Embed(title="⚔️ خزنة محل الاسلحة - GODFATHER FAMILY", color=discord.Color.dark_red())
+    embed.description = "قائمة الذخائر والأسلحة المتوفرة في الخزنة."
     await interaction.response.send_message(embed=embed)
 
-# 5️⃣ أمر متجر العائلة
-@bot.tree.command(name="store", description="عرض متجر العائلة")
+# 5️⃣ أمر خزنة الستور (متجر العائلة)
+@bot.tree.command(name="store", description="عرض خزنة الستور")
 async def store(interaction: discord.Interaction):
-    embed = discord.Embed(title="🛒 متجر العائلة - GODFATHER FAMILY", color=discord.Color.gold())
+    embed = discord.Embed(title="🛒 خزنة الستور - GODFATHER FAMILY", color=discord.Color.gold())
     embed.description = "قائمة الأغراض والمنتجات المتاحة للشراء أو التوزيع."
     await interaction.response.send_message(embed=embed)
 
-# 6️⃣ أمر مخزن الحانة
-@bot.tree.command(name="bar", description="عرض مخزن الحانة")
+# 6️⃣ أمر خزنة الحانة
+@bot.tree.command(name="bar", description="عرض خزنة الحانة")
 async def bar(interaction: discord.Interaction):
-    embed = discord.Embed(title="🍺 مخزن الحانة - GODFATHER FAMILY", color=discord.Color.dark_purple())
+    embed = discord.Embed(title="🍺 خزنة الحانة - GODFATHER FAMILY", color=discord.Color.dark_purple())
     embed.description = "قائمة المشروبات والمستلزمات الخاصة بالحانة."
     await interaction.response.send_message(embed=embed)
 
@@ -240,7 +241,7 @@ async def apply(interaction: discord.Interaction):
     embed.description = "مرحباً بك! للانضمام إلى العائلة، يرجى فتح تذكرة تقديم وتعبئة البيانات المطلوبة ليتم مراجعتها من قبل الإدارة."
     await interaction.response.send_message(embed=embed)
 
-# 8️⃣ أمر تنزيل لوحة التحضير الموقتة العامة
+# 8️⃣ أمر تنزيل لوحة التحضير
 @bot.tree.command(name="setup_attendance", description="تنزيل لوحة التحضير الموقتة للعائلة")
 @app_commands.checks.has_permissions(administrator=True)
 async def setup_attendance(interaction: discord.Interaction):
