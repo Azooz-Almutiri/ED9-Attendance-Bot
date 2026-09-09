@@ -299,7 +299,7 @@ async def store(interaction: discord.Interaction):
     embed = await build_vault_embed("store", "🛒 خزنة الستور - GODFATHER FAMILY", "قائمة الأغراض والمنتجات المتاحة للشراء أو التوزيع.", discord.Color.gold())
     await interaction.followup.send(embed=embed)
 
-@bot.tree.command(name="bar", description="zat", description="عرض خزنة الحانة بالجرد الحالي")
+@bot.tree.command(name="bar", description="عرض خزنة الحانة بالجرد الحالي")
 async def bar(interaction: discord.Interaction):
     await interaction.response.defer()
     embed = await build_vault_embed("bar", "🍺 خزنة الحانة - GODFATHER FAMILY", "قائمة المشروبات والمستلزمات الخاصة بالحانة.", discord.Color.dark_purple())
