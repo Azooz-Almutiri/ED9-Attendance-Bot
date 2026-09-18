@@ -23,10 +23,10 @@ def format_makkah_time(dt_obj):
 DB_NAME = "godfather_jobs.db"
 
 # ==================== الثوابت والمعرفات المطلوبة ====================
-BROADCAST_ROLE_ID = 1550542997010251927     # رتبة استلام البرودكاست
-WELCOME_ROLE_ID = 1550543013317447680       # الرول الذي يعطى للعضو عند دخوله
-RULES_CHANNEL_ID = 1550543164723564636      # روم القوانين
-APPLY_CHANNEL_ID = 1550543173300781116      # روم طلب التقديم
+BROADCAST_ROLE_ID = 1550542997010251927      # رتبة استلام البرودكاست
+WELCOME_ROLE_ID = 1550543013317447680        # الرول الذي يعطى للعضو عند دخوله
+RULES_CHANNEL_ID = 1550543164723564636       # روم القوانين
+APPLY_CHANNEL_ID = 1550543173300781116       # روم طلب التقديم
 WELCOME_CHANNEL_ID = 1550543159321427978    # روم مرحبا بك (الترحيب)
 
 # ==================== تهيئة قاعدة البيانات ====================
@@ -87,7 +87,6 @@ class GodfatherBot(commands.Bot):
         site = web.TCPSite(runner, '0.0.0.0', port)
         await site.start()
 
-# تعريف البوت هنا بالبداية (عشان تفهمها جميع الدالات والأوامر لاحقاً)
 bot = GodfatherBot()
 
 @bot.event
@@ -99,9 +98,18 @@ async def on_ready():
     except Exception as e:
         print(f"❌ Failed to sync: {e}")
 
-# ==================== نظام الترحيب التلقائي بالأعضاء الجدد ====================
+# ==================== نظام الترحيب التلقائي بالأعضاء الجدد (مع مانع التكرار) ====================
+recent_joined = set()
+
 @bot.event
 async def on_member_join(member: discord.Member):
+    if member.id in recent_joined:
+        return
+    recent_joined.add(member.id)
+    
+    # تنظيف الأيدي بعد 10 ثواني
+    asyncio.create_task(remove_recent(member.id))
+
     role = member.guild.get_role(WELCOME_ROLE_ID)
     if role:
         try:
@@ -127,6 +135,10 @@ async def on_member_join(member: discord.Member):
         )
         embed.set_thumbnail(url=member.display_avatar.url)
         await channel.send(content=member.mention, embed=embed)
+
+async def remove_recent(member_id):
+    await asyncio.sleep(10)
+    recent_joined.discard(member_id)
 
 # ==================== أمر البرودكاست المخصص لرتبة معينة ====================
 @bot.command(name="bc")
