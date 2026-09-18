@@ -22,7 +22,7 @@ def format_makkah_time(dt_obj):
 
 DB_NAME = "godfather_jobs.db"
 
-# ==================== الثوابت والأبرديات المطلوبة ====================
+# ==================== الثوابت والمعرفات المطلوبة ====================
 BROADCAST_ROLE_ID = 1550542997010251927     # رتبة استلام البرودكاست
 WELCOME_ROLE_ID = 1550543013317447680       # الرول الذي يعطى للعضو عند دخوله
 RULES_CHANNEL_ID = 1550543164723564636      # روم القوانين
@@ -87,6 +87,7 @@ class GodfatherBot(commands.Bot):
         site = web.TCPSite(runner, '0.0.0.0', port)
         await site.start()
 
+# تعريف البوت هنا بالبداية (عشان تفهمها جميع الدالات والأوامر لاحقاً)
 bot = GodfatherBot()
 
 @bot.event
@@ -101,7 +102,6 @@ async def on_ready():
 # ==================== نظام الترحيب التلقائي بالأعضاء الجدد ====================
 @bot.event
 async def on_member_join(member: discord.Member):
-    # 1. إعطاء الرول المحدد للعضو الجديد
     role = member.guild.get_role(WELCOME_ROLE_ID)
     if role:
         try:
@@ -109,7 +109,6 @@ async def on_member_join(member: discord.Member):
         except Exception as e:
             print(f"فشل في إعطاء الرول للعضو: {e}")
 
-    # 2. إرسال رسالة الترحيب في روم "مرحبا بك"
     channel = member.guild.get_channel(WELCOME_CHANNEL_ID)
     if channel:
         apply_channel = member.guild.get_channel(APPLY_CHANNEL_ID)
@@ -370,7 +369,7 @@ async def remove_item(interaction: discord.Interaction, vault_type: str, item_na
 @app_commands.describe(vault_type="اختر الخزنة المراد تصفيرها")
 @app_commands.checks.has_permissions(administrator=True)
 async def reset_inv(interaction: discord.Interaction, vault_type: str):
-    async with aiosqlite.connect(DB_Name if 'DB_Name' in globals() else DB_NAME) as db:
+    async with aiosqlite.connect(DB_NAME) as db:
         if vault_type == "store":
             await db.execute("DELETE FROM general_vaults WHERE vault_name = 'store'")
         elif vault_type == "weapons":
