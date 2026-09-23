@@ -18,13 +18,13 @@ def format_makkah_time(dt_obj):
         dt_obj = dt_obj.replace(tzinfo=timezone.utc).astimezone(MAKKAH_TZ)
     else:
         dt_obj = dt_obj.astimezone(MAKKAH_TZ)
-    return dt_obj.strftime("%I:%M %p").replace("AM", "صباحاً").replace("PM", "مساءً")
+    return dt_obj.strftime("%Y-%m-%d %I:%M %p").replace("AM", "صباحاً").replace("PM", "مساءً")
 
 DB_NAME = "godfather_jobs.db"
 
 # ==================== الثوابت والمعرفات المطلوبة ====================
 BROADCAST_ROLE_ID = 1550542997010251927      # رتبة استلام البرودكاست
-BC_SENDER_ROLE_ID = 1544440717815054378      # رتبة السماح بإرسال البرودكاست (Bot)
+BC_SENDER_ROLE_ID = 144440717815054378       # رتبة السماح بإرسال البرودكاست (Bot)
 WELCOME_ROLE_ID = 1550543013317447680        # الرول الذي يعطى للعضو عند دخوله
 RULES_CHANNEL_ID = 1550543164723564636       # روم القوانين
 APPLY_CHANNEL_ID = 1550543173300781116       # روم طلب التقديم
@@ -69,6 +69,18 @@ async def init_db():
                 horse_name TEXT PRIMARY KEY,
                 added_by TEXT,
                 added_at TEXT
+            )
+        ''')
+        # جدول تزاوج وإنتاج الخيول (مدة الإنتاج يومان = 48 ساعة)
+        await db.execute('''
+            CREATE TABLE IF NOT EXISTS horse_breeding (
+                rowid INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                horse_name TEXT,
+                breed_type TEXT,
+                horse_age TEXT,
+                mating_time TEXT,
+                ready_time TEXT
             )
         ''')
         # جدول تحضير RedM
@@ -160,7 +172,6 @@ async def remove_recent(member_id):
 # ==================== أمر البرودكاست المخصص مع شرط الرتبة ====================
 @bot.command(name="bc")
 async def broadcast_cmd(ctx, *, message_content: str = None):
-    # التحقق مما إذا كان العضو يمتلك رتبة Bot المحددة أو صلاحية الإدارة الكامله
     has_required_role = any(r.id == BC_SENDER_ROLE_ID for r in getattr(ctx.author, "roles", []))
     if not has_required_role and not ctx.author.guild_permissions.administrator:
         await ctx.message.delete()
@@ -349,6 +360,102 @@ async def setup_redm_panel(interaction: discord.Interaction):
     )
     await channel.send(embed=embed, view=RedMAttendanceView(bot))
     await interaction.response.send_message(f"✅ تم إرسال لوحة تحضير RedM بنجاح إلى الروم {channel.mention}.", ephemeral=True)
+
+# ==================== نظام تزاوج وإنتاج الخيول (Breed Modal) ====================
+class HorseBreedModal(discord.ui.Modal, title="حاسبة تزاوج وإنتاج الخيول 🐎"):
+    horse_name = discord.ui.TextInput(label="اسم الحصان", placeholder="أدخل اسم الحصان...", required=True)
+    breed_type = discord.ui.TextInput(label="فصيلة الحصان", placeholder="أدخل فصيلة الحصان...", required=True)
+    horse_age = discord.ui.TextInput(label="عمر الحصان", placeholder="أدخل عمر الحصان...", required=True)
+    mating_date = discord.ui.TextInput(label="تاريخ ووقت التزاوج", placeholder="YYYY-MM-DD HH:MM (مثال: 2026-09-23 15:30)", required=True)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            mating_dt = datetime.strptime(self.mating_date.value.strip(), "%Y-%m-%d %H:%M")
+            mating_dt = mating_dt.replace(tzinfo=MAKKAH_TZ)
+        except ValueError:
+            await interaction.response.send_message("❌ صيغة التاريخ غير صحيحة! يرجى استخدام الصيغة: `YYYY-MM-DD HH:MM` (مثال: `2026-09-23 15:30`)", ephemeral=True)
+            return
+
+        ready_dt = mating_dt + timedelta(days=2)
+        
+        async with aiosqlite.connect(DB_NAME) as db:
+            await db.execute(
+                "INSERT INTO horse_breeding (user_id, horse_name, breed_type, horse_age, mating_time, ready_time) VALUES (?, ?, ?, ?, ?, ?)",
+                (interaction.user.id, self.horse_name.value, self.breed_type.value, self.horse_age.value, mating_dt.isoformat(), ready_dt.isoformat())
+            )
+            await db.commit()
+
+        now = get_makkah_now()
+        remaining = ready_dt - now
+
+        if remaining.total_seconds() > 0:
+            rem_hours = int(remaining.total_seconds() // 3600)
+            rem_mins = int((remaining.total_seconds() % 3600) // 60)
+            time_text = f"باقي على الإنتاج: `{rem_hours} ساعة و {rem_mins} دقيقة`"
+        else:
+            time_text = "🟢 **انتهت مدة الإنتاج وجاهز للحصاد!**"
+
+        embed = discord.Embed(
+            title="🐎 تم تسجيل عملية تزاوج الحصان بنجاح",
+            description=f"تم حفظ تفاصيل الإنتاج وحساب الموعد بدقة (مدة الإنتاج: **يومان**).",
+            color=discord.Color.gold(),
+            timestamp=get_makkah_now()
+        )
+        embed.add_field(name="اسم الحصان", value=f"`{self.horse_name.value}`", inline=True)
+        embed.add_field(name="الفصيلة", value=f"`{self.breed_type.value}`", inline=True)
+        embed.add_field(name="العمر", value=f"`{self.horse_age.value}`", inline=True)
+        embed.add_field(name="وقت التزاوج", value=f"`{format_makkah_time(mating_dt)}`", inline=False)
+        embed.add_field(name="وقت الإنتاج المتوقع", value=f"`{format_makkah_time(ready_dt)}`", inline=False)
+        embed.add_field(name="الحالة", value=time_text, inline=False)
+
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+@bot.tree.command(name="breed", description="حساب موعد إنتاج الحصان الجديد بناءً على وقت التزاوج (يومان)")
+async def breed_cmd(interaction: discord.Interaction):
+    await interaction.response.send_modal(HorseBreedModal())
+
+@bot.tree.command(name="breed_list", description="عرض قائمة جميع عمليات تزاوج وإنتاج الخيول الحالية")
+async def breed_list_cmd(interaction: discord.Interaction):
+    async with aiosqlite.connect(DB_NAME) as db:
+        async with db.execute("SELECT rowid, horse_name, breed_type, horse_age, ready_time FROM horse_breeding") as cursor:
+            rows = await cursor.fetchall()
+
+    embed = discord.Embed(title="🐎 قائمة إنتاج وتزاوج الخيول الحالية", color=discord.Color.dark_red(), timestamp=get_makkah_now())
+    if not rows:
+        embed.description = "لا توجد عمليات تزاوج أو إنتاج مسجلة حالياً."
+    else:
+        now = get_makkah_now()
+        for rowid, h_name, b_type, h_age, ready_str in rows:
+            try:
+                ready_dt = datetime.fromisoformat(ready_str)
+                remaining = ready_dt - now
+                if remaining.total_seconds() > 0:
+                    rh = int(remaining.total_seconds() // 3600)
+                    rm = int((remaining.total_seconds() % 3600) // 60)
+                    status = f"⏳ باقي: {rh}س {rm}د"
+                else:
+                    status = "🟢 جاهز للإنتاج!"
+            except Exception:
+                status = "غير محدد"
+
+            embed.add_field(
+                name=f"ID: {rowid} | {h_name}",
+                value=f"الفصيلة: `{b_type}` | العمر: `{h_age}`\nموعد الإنتاج: `{format_makkah_time(ready_dt)}`\nالحالة: **{status}**",
+                inline=False
+            )
+    await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(name="remove_breed", description="حذف عملية إنتاج حصان من القائمة (خاص بالإدارة)")
+@app_commands.describe(row_id="رقم الـ ID الخاص بعملية الإنتاج من أمر breed_list")
+@app_commands.checks.has_permissions(administrator=True)
+async def remove_breed(interaction: discord.Interaction, row_id: int):
+    async with aiosqlite.connect(DB_NAME) as db:
+        cursor = await db.execute("DELETE FROM horse_breeding WHERE rowid = ?", (row_id,))
+        await db.commit()
+        if cursor.rowcount == 0:
+            await interaction.response.send_message(f"❌ لم يتم العثور على عملية إنتاج بهذا الـ ID ({row_id}).", ephemeral=True)
+            return
+    await interaction.response.send_message(f"🗑️ تم حذف عملية إنتاج الحصان (ID: {row_id}) بنجاح.")
 
 # ==================== أوامر التقديم والخيول ====================
 @bot.tree.command(name="apply", description="عرض طريقة التقديم للانضمام لعائلة القودفاذر")
