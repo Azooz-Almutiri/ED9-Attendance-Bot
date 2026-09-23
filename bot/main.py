@@ -24,7 +24,7 @@ DB_NAME = "godfather_jobs.db"
 
 # ==================== الثوابت والمعرفات المطلوبة ====================
 BROADCAST_ROLE_ID = 1550542997010251927      # رتبة استلام البرودكاست
-BC_SENDER_ROLE_ID = 144440717815054378       # رتبة السماح بإرسال البرودكاست (Bot)
+BC_SENDER_ROLE_ID = 1544440717815054378      # رتبة السماح بإرسال البرودكاست (Bot)
 WELCOME_ROLE_ID = 1550543013317447680        # الرول الذي يعطى للعضو عند دخوله
 RULES_CHANNEL_ID = 1550543164723564636       # روم القوانين
 APPLY_CHANNEL_ID = 1550543173300781116       # روم طلب التقديم
@@ -361,19 +361,20 @@ async def setup_redm_panel(interaction: discord.Interaction):
     await channel.send(embed=embed, view=RedMAttendanceView(bot))
     await interaction.response.send_message(f"✅ تم إرسال لوحة تحضير RedM بنجاح إلى الروم {channel.mention}.", ephemeral=True)
 
-# ==================== نظام تزاوج وإنتاج الخيول (Breed Modal) ====================
+# ==================== نظام تزاوج وإنتاج الخيول (Breed Modal - 12h AM/PM) ====================
 class HorseBreedModal(discord.ui.Modal, title="حاسبة تزاوج وإنتاج الخيول 🐎"):
     horse_name = discord.ui.TextInput(label="اسم الحصان", placeholder="أدخل اسم الحصان...", required=True)
     breed_type = discord.ui.TextInput(label="فصيلة الحصان", placeholder="أدخل فصيلة الحصان...", required=True)
     horse_age = discord.ui.TextInput(label="عمر الحصان", placeholder="أدخل عمر الحصان...", required=True)
-    mating_date = discord.ui.TextInput(label="تاريخ ووقت التزاوج", placeholder="YYYY-MM-DD HH:MM (مثال: 2026-09-23 15:30)", required=True)
+    mating_date = discord.ui.TextInput(label="تاريخ ووقت التزاوج", placeholder="YYYY-MM-DD hh:mm AM/PM (مثال: 2026-09-23 03:30 PM)", required=True)
 
     async def on_submit(self, interaction: discord.Interaction):
         try:
-            mating_dt = datetime.strptime(self.mating_date.value.strip(), "%Y-%m-%d %H:%M")
+            # قراءة التاريخ بصيغة 12 ساعة مع AM/PM
+            mating_dt = datetime.strptime(self.mating_date.value.strip(), "%Y-%m-%d %I:%M %p")
             mating_dt = mating_dt.replace(tzinfo=MAKKAH_TZ)
         except ValueError:
-            await interaction.response.send_message("❌ صيغة التاريخ غير صحيحة! يرجى استخدام الصيغة: `YYYY-MM-DD HH:MM` (مثال: `2026-09-23 15:30`)", ephemeral=True)
+            await interaction.response.send_message("❌ صيغة التاريخ غير صحيحة! يرجى استخدام الصيغة: `YYYY-MM-DD hh:mm AM/PM` (مثال: `2026-09-23 03:30 PM`)", ephemeral=True)
             return
 
         ready_dt = mating_dt + timedelta(days=2)
