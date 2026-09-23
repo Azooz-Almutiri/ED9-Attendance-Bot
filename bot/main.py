@@ -71,7 +71,6 @@ async def init_db():
                 added_at TEXT
             )
         ''')
-        # جدول تزاوج وإنتاج الخيول (مدة الإنتاج يومان = 48 ساعة)
         await db.execute('''
             CREATE TABLE IF NOT EXISTS horse_breeding (
                 rowid INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -83,14 +82,21 @@ async def init_db():
                 ready_time TEXT
             )
         ''')
-        # جدول تحضير RedM
         await db.execute('''
             CREATE TABLE IF NOT EXISTS redm_attendance (
                 user_id INTEGER,
                 user_name TEXT,
                 start_time TIMESTAMP,
                 end_time TIMESTAMP,
-                duration_minutes INTEGER DEFAULT 0
+                duration_minutes INTEGER DEFAULT 0,
+                points_earned INTEGER DEFAULT 0
+            )
+        ''')
+        await db.execute('''
+            CREATE TABLE IF NOT EXISTS member_points (
+                user_id INTEGER PRIMARY KEY,
+                user_name TEXT,
+                total_points INTEGER DEFAULT 0
             )
         ''')
         await db.commit()
@@ -207,7 +213,7 @@ async def broadcast_cmd(ctx, *, message_content: str = None):
 
     await status_msg.edit(content=f"✅ تم الانتهاء من إرسال البرودكاست!\n📤 تم الإرسال لـ {sent} عضو\n❌ تعذر الإرسال لـ {failed} عضو (خاص مقفل)")
 
-# ==================== نظام تحضير RedM التفاعلي ====================
+# ==================== نظام تحضير RedM التفاعلي والنقاط ====================
 class ConfirmRedMView(discord.ui.View):
     def __init__(self, user_id: int):
         super().__init__(timeout=CONFIRM_TIMEOUT)
@@ -266,9 +272,16 @@ async def start_redm_periodic_check(bot_client, member: discord.Member):
                 except Exception:
                     duration = 0
 
+                earned_points = duration // 60  # كل ساعة = نقطة
+
                 async with aiosqlite.connect(DB_NAME) as db:
-                    await db.execute("UPDATE redm_attendance SET end_time = ?, duration_minutes = ? WHERE rowid = ?", 
-                                     (now.isoformat(), duration, row_id))
+                    await db.execute("UPDATE redm_attendance SET end_time = ?, duration_minutes = ?, points_earned = ? WHERE rowid = ?", 
+                                     (now.isoformat(), duration, earned_points, row_id))
+                    if earned_points > 0:
+                        await db.execute('''
+                            INSERT INTO member_points (user_id, user_name, total_points) VALUES (?, ?, ?)
+                            ON CONFLICT(user_id) DO UPDATE SET total_points = total_points + ?, user_name = ?
+                        ''', (member.id, member.display_name, earned_points, earned_points, member.display_name))
                     await db.commit()
 
                 if msg:
@@ -329,7 +342,17 @@ class RedMAttendanceView(discord.ui.View):
             except Exception:
                 duration = 0
 
-            await db.execute("UPDATE redm_attendance SET end_time = ?, duration_minutes = ? WHERE rowid = ?", (now.isoformat(), duration, row_id))
+            earned_points = duration // 60  # كل ساعة حضور = نقطة واحدة
+
+            await db.execute("UPDATE redm_attendance SET end_time = ?, duration_minutes = ?, points_earned = ? WHERE rowid = ?", 
+                             (now.isoformat(), duration, earned_points, row_id))
+            
+            if earned_points > 0:
+                await db.execute('''
+                    INSERT INTO member_points (user_id, user_name, total_points) VALUES (?, ?, ?)
+                    ON CONFLICT(user_id) DO UPDATE SET total_points = total_points + ?, user_name = ?
+                ''', (user.id, user.display_name, earned_points, earned_points, user.display_name))
+            
             await db.commit()
 
         if user.id in periodic_check_tasks:
@@ -337,7 +360,7 @@ class RedMAttendanceView(discord.ui.View):
         periodic_check_tasks.pop(user.id, None)
 
         hours, mins = divmod(duration, 60)
-        await interaction.response.send_message(f"🔴 تم تسجيل خروجك من RedM. مدة تواجدك: `{hours} ساعة و {mins} دقيقة`", ephemeral=True)
+        await interaction.response.send_message(f"🔴 تم تسجيل خروجك من RedM. مدة تواجدك: `{hours} ساعة و {mins} دقيقة` | النقاط المكتسبة: `⭐ {earned_points} نقطة`", ephemeral=True)
 
 @bot.tree.command(name="setup_redm_panel", description="إرسال لوحة تحضير RedM في روم التحضير المخصص (خاص بالإدارة)")
 @app_commands.checks.has_permissions(administrator=True)
@@ -354,12 +377,66 @@ async def setup_redm_panel(interaction: discord.Interaction):
                     "اضغط عند دخولك للسيرفر لبدء احتساب الوقت.\n\n"
                     "🔴 **خروج RedM**\n"
                     "اضغط عند انتهائك لإيقاف احتساب الوقت.\n\n"
-                    "🎮 **كل ساعة = 1 RedM نقطة**",
+                    "⭐ **كل ساعة تواجد = 1 نقطة**",
         color=discord.Color.red(),
         timestamp=get_makkah_now()
     )
     await channel.send(embed=embed, view=RedMAttendanceView(bot))
     await interaction.response.send_message(f"✅ تم إرسال لوحة تحضير RedM بنجاح إلى الروم {channel.mention}.", ephemeral=True)
+
+# ==================== أوامر النقاط والإحصائيات ====================
+@bot.tree.command(name="points", description="عرض عدد النقاط الحالية لك أو لأي عضو آخر")
+@app_commands.describe(member="العضو المراد استعلام نقاطه (اختياري)")
+async def points_cmd(interaction: discord.Interaction, member: discord.Member = None):
+    target = member or interaction.user
+    async with aiosqlite.connect(DB_NAME) as db:
+        async with db.execute("SELECT total_points FROM member_points WHERE user_id = ?", (target.id,)) as cursor:
+            row = await cursor.fetchone()
+    
+    points = row[0] if row else 0
+    embed = discord.Embed(
+        title="⭐ نظام نقاط تحضير RedM",
+        description=f"العضو: {target.mention}\nرصيد النقاط الحالي: **`{points:,} نقطة`** (كل ساعة = نقطة)",
+        color=discord.Color.gold(),
+        timestamp=get_makkah_now()
+    )
+    await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(name="points_list", description="عرض قائمة بجميع الأعضاء الذين لديهم نقاط وعدد الأشخاص الإجمالي")
+async def points_list_cmd(interaction: discord.Interaction):
+    async with aiosqlite.connect(DB_NAME) as db:
+        async with db.execute("SELECT user_id, user_name, total_points FROM member_points WHERE total_points > 0 ORDER BY total_points DESC") as cursor:
+            rows = await cursor.fetchall()
+
+    total_members_with_points = len(rows)
+
+    embed = discord.Embed(
+        title="📊 قائمة نقاط أعضاء RedM (ساعة = نقطة)",
+        description=f"إجمالي عدد الأعضاء الذين لديهم نقاط: **`{total_members_with_points} عضو`**",
+        color=discord.Color.dark_red(),
+        timestamp=get_makkah_now()
+    )
+
+    if not rows:
+        embed.add_field(name="لا توجد نقاط مسجلة", value="لم يحصل أي عضو على نقاط حتى الآن.", inline=False)
+    else:
+        for idx, (u_id, u_name, pts) in enumerate(rows, 1):
+            embed.add_field(
+                name=f"{idx}. {u_name or 'عضو'} (ID: {u_id})",
+                value=f"النقاط: **`{pts} نقطة`**",
+                inline=False
+            )
+
+    await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(name="reset_points", description="تصفير نقاط عضو معين (خاص بالإدارة)")
+@app_commands.describe(member="العضو المراد تصفير نقاطه")
+@app_commands.checks.has_permissions(administrator=True)
+async def reset_points(interaction: discord.Interaction, member: discord.Member):
+    async with aiosqlite.connect(DB_NAME) as db:
+        await db.execute("UPDATE member_points SET total_points = 0 WHERE user_id = ?", (member.id,))
+        await db.commit()
+    await interaction.response.send_message(f"⚠️ تم تصفير نقاط العضو {member.mention} بنجاح.")
 
 # ==================== نظام تزاوج وإنتاج الخيول (Breed Modal - DD-MM-YYYY hh:mm AM/PM) ====================
 class HorseBreedModal(discord.ui.Modal, title="حاسبة تزاوج وإنتاج الخيول 🐎"):
@@ -370,7 +447,6 @@ class HorseBreedModal(discord.ui.Modal, title="حاسبة تزاوج وإنتا�
 
     async def on_submit(self, interaction: discord.Interaction):
         try:
-            # قراءة التاريخ بالصيغة العربية: يوم-شهر-سنة مع الوقت ونظام 12 ساعة AM/PM
             mating_dt = datetime.strptime(self.mating_date.value.strip(), "%d-%m-%Y %I:%M %p")
             mating_dt = mating_dt.replace(tzinfo=MAKKAH_TZ)
         except ValueError:
