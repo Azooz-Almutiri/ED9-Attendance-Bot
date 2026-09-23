@@ -24,10 +24,17 @@ DB_NAME = "godfather_jobs.db"
 
 # ==================== الثوابت والمعرفات المطلوبة ====================
 BROADCAST_ROLE_ID = 1550542997010251927      # رتبة استلام البرودكاست
+BC_SENDER_ROLE_ID = 1544440717815054378      # رتبة السماح بإرسال البرودكاست (Bot)
 WELCOME_ROLE_ID = 1550543013317447680        # الرول الذي يعطى للعضو عند دخوله
 RULES_CHANNEL_ID = 1550543164723564636       # روم القوانين
 APPLY_CHANNEL_ID = 1550543173300781116       # روم طلب التقديم
 WELCOME_CHANNEL_ID = 1550543159321427978    # روم مرحبا بك (الترحيب)
+ATTENDANCE_CHANNEL_ID = 1552244246764064818  # روم تحضير RedM
+
+CHECK_INTERVAL = 3600         # التحقق كل ساعة (3600 ثانية)
+CONFIRM_TIMEOUT = 600         # 10 دقائق مهلة للرد على تأكيد التواجد
+
+periodic_check_tasks = {}
 
 # ==================== تهيئة قاعدة البيانات ====================
 async def init_db():
@@ -64,6 +71,16 @@ async def init_db():
                 added_at TEXT
             )
         ''')
+        # جدول تحضير RedM
+        await db.execute('''
+            CREATE TABLE IF NOT EXISTS redm_attendance (
+                user_id INTEGER,
+                user_name TEXT,
+                start_time TIMESTAMP,
+                end_time TIMESTAMP,
+                duration_minutes INTEGER DEFAULT 0
+            )
+        ''')
         await db.commit()
 
 # ==================== سيرفر الويب للبوت ====================
@@ -79,6 +96,7 @@ class GodfatherBot(commands.Bot):
 
     async def setup_hook(self):
         await init_db()
+        self.add_view(RedMAttendanceView(self))
         app = web.Application()
         app.router.add_get('/', handle)
         runner = web.AppRunner(app)
@@ -98,7 +116,7 @@ async def on_ready():
     except Exception as e:
         print(f"❌ Failed to sync: {e}")
 
-# ==================== نظام الترحيب التلقائي بالأعضاء الجدد (مع مانع التكرار) ====================
+# ==================== نظام الترحيب التلقائي بالأعضاء الجدد ====================
 recent_joined = set()
 
 @bot.event
@@ -107,7 +125,6 @@ async def on_member_join(member: discord.Member):
         return
     recent_joined.add(member.id)
     
-    # تنظيف الأيدي بعد 10 ثواني
     asyncio.create_task(remove_recent(member.id))
 
     role = member.guild.get_role(WELCOME_ROLE_ID)
@@ -140,10 +157,16 @@ async def remove_recent(member_id):
     await asyncio.sleep(10)
     recent_joined.discard(member_id)
 
-# ==================== أمر البرودكاست المخصص لرتبة معينة ====================
+# ==================== أمر البرودكاست المخصص مع شرط الرتبة ====================
 @bot.command(name="bc")
-@commands.has_permissions(administrator=True)
 async def broadcast_cmd(ctx, *, message_content: str = None):
+    # التحقق مما إذا كان العضو يمتلك رتبة Bot المحددة أو صلاحية الإدارة الكامله
+    has_required_role = any(r.id == BC_SENDER_ROLE_ID for r in getattr(ctx.author, "roles", []))
+    if not has_required_role and not ctx.author.guild_permissions.administrator:
+        await ctx.message.delete()
+        await ctx.send("❌ عذراً، لا تمتلك الصلاحية أو رتبة إرسال البرودكاست المطلوبة!", delete_after=6)
+        return
+
     try:
         await ctx.message.delete()
     except Exception:
@@ -155,7 +178,7 @@ async def broadcast_cmd(ctx, *, message_content: str = None):
 
     target_role = ctx.guild.get_role(BROADCAST_ROLE_ID)
     if not target_role:
-        await ctx.send("❌ عذراً، رتبة البرودكاست المحددة غير موجودة في السيرفر!", delete_after=6)
+        await ctx.send("❌ عذراً، رتبة استقبال البرودكاست المحددة غير موجودة في السيرفر!", delete_after=6)
         return
 
     status_msg = await ctx.send(f"⏳ جاري إرسال البرودكاست لأصحاب رتبة ({target_role.name})...")
@@ -173,7 +196,161 @@ async def broadcast_cmd(ctx, *, message_content: str = None):
 
     await status_msg.edit(content=f"✅ تم الانتهاء من إرسال البرودكاست!\n📤 تم الإرسال لـ {sent} عضو\n❌ تعذر الإرسال لـ {failed} عضو (خاص مقفل)")
 
-# ==================== 1. أوامر التقديم والخيول ====================
+# ==================== نظام تحضير RedM التفاعلي ====================
+class ConfirmRedMView(discord.ui.View):
+    def __init__(self, user_id: int):
+        super().__init__(timeout=CONFIRM_TIMEOUT)
+        self.user_id = user_id
+        self.confirmed = False
+
+    @discord.ui.button(label="تأكيد التواجد 🟢", style=discord.ButtonStyle.green, custom_id="confirm_redm_presence")
+    async def confirm_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("❌ هذا التنبيه ليس مخصصاً لك!", ephemeral=True)
+            return
+
+        self.confirmed = True
+        button.disabled = True
+        button.label = "تم التأكيد ✅"
+        await interaction.response.edit_message(content=f"✅ {interaction.user.mention} تم تأكيد استمرار تحضيرك بنجاح!", view=self)
+        self.stop()
+
+async def start_redm_periodic_check(bot_client, member: discord.Member):
+    try:
+        while True:
+            await asyncio.sleep(CHECK_INTERVAL)
+            async with aiosqlite.connect(DB_NAME) as db:
+                async with db.execute("SELECT rowid, start_time FROM redm_attendance WHERE user_id = ? AND end_time IS NULL", (member.id,)) as cursor:
+                    active_session = await cursor.fetchone()
+
+            if not active_session:
+                break
+
+            channel = bot_client.get_channel(ATTENDANCE_CHANNEL_ID)
+            if not channel:
+                try:
+                    channel = await bot_client.fetch_channel(ATTENDANCE_CHANNEL_ID)
+                except Exception:
+                    break
+
+            view = ConfirmRedMView(member.id)
+            msg = None
+            try:
+                msg = await channel.send(
+                    f"⚠️ {member.mention} **تأكيد حضور دوري:**\n"
+                    "لقد مرت ساعة على تواجدك في التحضير. هل ما زلت متصلاً؟\n"
+                    "يرجى الضغط على الزر أدناه خلال **10 دقائق** لتأكيد تواجدك، وإلا سيتم تسجيل خروجك تلقائياً.",
+                    view=view
+                )
+            except Exception:
+                pass
+
+            await view.wait()
+
+            if not view.confirmed:
+                now = get_makkah_now()
+                row_id, start_str = active_session
+                try:
+                    duration = max(0, int((now - datetime.fromisoformat(str(start_str))).total_seconds() // 60))
+                except Exception:
+                    duration = 0
+
+                async with aiosqlite.connect(DB_NAME) as db:
+                    await db.execute("UPDATE redm_attendance SET end_time = ?, duration_minutes = ? WHERE rowid = ?", 
+                                     (now.isoformat(), duration, row_id))
+                    await db.commit()
+
+                if msg:
+                    try:
+                        await msg.edit(content=f"❌ {member.mention} **تم تسجيل خروجك تلقائياً** لعدم إجابتك على تأكيد التواجد خلال المدة المحددة.", view=None)
+                    except Exception:
+                        pass
+                break
+    except asyncio.CancelledError:
+        pass
+    finally:
+        periodic_check_tasks.pop(member.id, None)
+
+class RedMAttendanceView(discord.ui.View):
+    def __init__(self, bot_instance):
+        super().__init__(timeout=None)
+        self.bot = bot_instance
+
+    @discord.ui.button(label="دخول RedM", style=discord.ButtonStyle.green, custom_id="redm_start_btn")
+    async def start_redm(self, interaction: discord.Interaction, button: discord.ui.Button):
+        user = interaction.user
+        now = get_makkah_now()
+
+        async with aiosqlite.connect(DB_NAME) as db:
+            async with db.execute("SELECT start_time FROM redm_attendance WHERE user_id = ? AND end_time IS NULL", (user.id,)) as cursor:
+                active_session = await cursor.fetchone()
+
+            if active_session:
+                await interaction.response.send_message("❌ أنت مسجل دخول في RedM بالفعل!", ephemeral=True)
+                return
+
+            await db.execute("INSERT INTO redm_attendance (user_id, user_name, start_time) VALUES (?, ?, ?)",
+                             (user.id, user.display_name, now.isoformat()))
+            await db.commit()
+
+        if user.id in periodic_check_tasks:
+            periodic_check_tasks[user.id].cancel()
+
+        periodic_check_tasks[user.id] = asyncio.create_task(start_redm_periodic_check(self.bot, user))
+        await interaction.response.send_message(f"✅ تم تسجيل دخولك في RedM بنجاح الساعة `{format_makkah_time(now)}`.", ephemeral=True)
+
+    @discord.ui.button(label="خروج RedM", style=discord.ButtonStyle.red, custom_id="redm_end_btn")
+    async def end_redm(self, interaction: discord.Interaction, button: discord.ui.Button):
+        user = interaction.user
+        now = get_makkah_now()
+
+        async with aiosqlite.connect(DB_NAME) as db:
+            async with db.execute("SELECT rowid, start_time FROM redm_attendance WHERE user_id = ? AND end_time IS NULL", (user.id,)) as cursor:
+                active_session = await cursor.fetchone()
+
+            if not active_session:
+                await interaction.response.send_message("❌ أنت غير مسجل دخول في RedM حالياً!", ephemeral=True)
+                return
+
+            row_id, start_str = active_session
+            try:
+                duration = max(0, int((now - datetime.fromisoformat(str(start_str))).total_seconds() // 60))
+            except Exception:
+                duration = 0
+
+            await db.execute("UPDATE redm_attendance SET end_time = ?, duration_minutes = ? WHERE rowid = ?", (now.isoformat(), duration, row_id))
+            await db.commit()
+
+        if user.id in periodic_check_tasks:
+            periodic_check_tasks[user.id].cancel()
+        periodic_check_tasks.pop(user.id, None)
+
+        hours, mins = divmod(duration, 60)
+        await interaction.response.send_message(f"🔴 تم تسجيل خروجك من RedM. مدة تواجدك: `{hours} ساعة و {mins} دقيقة`", ephemeral=True)
+
+@bot.tree.command(name="setup_redm_panel", description="إرسال لوحة تحضير RedM في روم التحضير المخصص (خاص بالإدارة)")
+@app_commands.checks.has_permissions(administrator=True)
+async def setup_redm_panel(interaction: discord.Interaction):
+    channel = interaction.guild.get_channel(ATTENDANCE_CHANNEL_ID)
+    if not channel:
+        await interaction.response.send_message("❌ روم التحضير المخصص غير موجود أو خطأ في المعرف!", ephemeral=True)
+        return
+
+    embed = discord.Embed(
+        title="⚔️ تحضير RedM",
+        description="استخدم الأزرار بالأسفل لتسجيل حضورك في RedM.\n\n"
+                    "🟢 **دخول RedM**\n"
+                    "اضغط عند دخولك للسيرفر لبدء احتساب الوقت.\n\n"
+                    "🔴 **خروج RedM**\n"
+                    "اضغط عند انتهائك لإيقاف احتساب الوقت.\n\n"
+                    "🎮 **كل ساعة = 1 RedM نقطة**",
+        color=discord.Color.red(),
+        timestamp=get_makkah_now()
+    )
+    await channel.send(embed=embed, view=RedMAttendanceView(bot))
+    await interaction.response.send_message(f"✅ تم إرسال لوحة تحضير RedM بنجاح إلى الروم {channel.mention}.", ephemeral=True)
+
+# ==================== أوامر التقديم والخيول ====================
 @bot.tree.command(name="apply", description="عرض طريقة التقديم للانضمام لعائلة القودفاذر")
 async def apply_cmd(interaction: discord.Interaction):
     apply_ch = interaction.guild.get_channel(APPLY_CHANNEL_ID)
@@ -223,7 +400,7 @@ async def remove_horse(interaction: discord.Interaction, horse_name: str):
             return
     await interaction.response.send_message(f"🗑️ تم حذف الحصان `{horse_name}` من القائمة بنجاح.")
 
-# ==================== 2. نظام الستور / الخزنة العامة ====================
+# ==================== نظام الستور / الخزنة العامة ====================
 @bot.tree.command(name="store", description="عرض خزنة الستور بالجرد الحالي")
 async def store_cmd(interaction: discord.Interaction):
     async with aiosqlite.connect(DB_NAME) as db:
@@ -246,7 +423,7 @@ async def store_inv(interaction: discord.Interaction, amount: int):
         await db.commit()
     await interaction.response.send_message(f"✅ تم تحديث جرد خزنة الستور بمقدار `{amount}` بنجاح.")
 
-# ==================== 3. نظام محل الأسلحة (Weapons) ====================
+# ==================== نظام محل الأسلحة (Weapons) ====================
 @bot.tree.command(name="weapons", description="عرض خزنة محل الأسلحة بالجرد الحالي")
 async def weapons_cmd(interaction: discord.Interaction):
     async with aiosqlite.connect(DB_NAME) as db:
@@ -272,7 +449,7 @@ async def weapons_inv(interaction: discord.Interaction, item_name: str, quantity
         await db.commit()
     await interaction.response.send_message(f"✅ تم تحديث خزنة الأسلحة ({item_name}) بمقدار `{quantity}` بنجاح.")
 
-# ==================== 4. نظام الحانة (Bar) ====================
+# ==================== نظام الحانة (Bar) ====================
 @bot.tree.command(name="bar", description="عرض خزنة الحانة بالجرد الحالي")
 async def bar_cmd(interaction: discord.Interaction):
     async with aiosqlite.connect(DB_NAME) as db:
@@ -298,7 +475,7 @@ async def bar_inv(interaction: discord.Interaction, item_name: str, quantity: in
         await db.commit()
     await interaction.response.send_message(f"✅ تم تحديث خزنة الحانة ({item_name}) بمقدار `{quantity}` بنجاح.")
 
-# ==================== 5. نظام الحداد (Blacksmith & Inventory) ====================
+# ==================== نظام الحداد (Blacksmith & Inventory) ====================
 @bot.tree.command(name="blacksmith", description="عرض خزنة الحداد بالجرد الحالي")
 async def blacksmith_cmd(interaction: discord.Interaction):
     async with aiosqlite.connect(DB_NAME) as db:
@@ -324,7 +501,7 @@ async def inventory_cmd(interaction: discord.Interaction, material_name: str, qu
         await db.commit()
     await interaction.response.send_message(f"✅ تم تحديث موارد خزنة الحداد ({material_name}) بمقدار `{quantity}` بنجاح.")
 
-# ==================== 6. نظام الأغاني (Play, Skip, Stop) ====================
+# ==================== نظام الأغاني ====================
 @bot.tree.command(name="play", description="تشغيل مقطع صوتي أو أغنية من يوتيوب")
 @app_commands.describe(query="اسم الأغنية أو الرابط")
 async def play_music(interaction: discord.Interaction, query: str):
@@ -338,7 +515,7 @@ async def skip_music(interaction: discord.Interaction):
 async def stop_music(interaction: discord.Interaction):
     await interaction.response.send_message("⏹️ تم إيقاف الصوت ومغادرة القناة الصوتية بنجاح.")
 
-# ==================== 7. أوامر الإدارة المتقدمة (حذف وتصفير) ====================
+# ==================== أوامر الإدارة المتقدمة (حذف وتصفير) ====================
 @bot.tree.command(name="remove_item", description="حذف عنصر معين نهائياً من خزنة محددة")
 @app_commands.choices(vault_type=[
     app_commands.Choice(name="محل الأسلحة", value="weapons"),
