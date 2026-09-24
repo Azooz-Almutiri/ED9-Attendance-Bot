@@ -128,8 +128,11 @@ bot = GodfatherBot()
 async def on_ready():
     print(f"Logged in as {bot.user.name} ({bot.user.id})")
     try:
-        synced = await bot.tree.sync()
-        print(f"✅ Synced {len(synced)} slash commands.")
+        # مزامنة فورية للأوامر على مستوى السيرفرات لضمان عدم تعليق الأوامر
+        for guild in bot.guilds:
+            bot.tree.copy_global_to(guild=guild)
+            await bot.tree.sync(guild=guild)
+        print("✅ Synced slash commands successfully to all guilds.")
     except Exception as e:
         print(f"❌ Failed to sync: {e}")
 
