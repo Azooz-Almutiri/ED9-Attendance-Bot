@@ -439,17 +439,21 @@ async def reset_points(interaction: discord.Interaction, member: discord.Member)
 
 # ==================== نظام تزاوج وإنتاج الخيول (متاح للجميع) ====================
 class HorseBreedModal(discord.ui.Modal, title="حاسبة تزاوج وإنتاج الخيول 🐎"):
+    def __init__(self):
+        super().__init__()
+
     horse_name = discord.ui.TextInput(label="اسم الحصان", placeholder="أدخل اسم الحصان...", required=True)
     breed_type = discord.ui.TextInput(label="فصيلة الحصان", placeholder="أدخل فصيلة الحصان...", required=True)
     horse_age = discord.ui.TextInput(label="عمر الحصان", placeholder="أدخل عمر الحصان...", required=True)
     mating_date = discord.ui.TextInput(label="تاريخ ووقت التزاوج", placeholder="DD-MM-YYYY hh:mm AM/PM (مثال: 23-09-2026 03:30 PM)", required=True)
 
     async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
         try:
             mating_dt = datetime.strptime(self.mating_date.value.strip(), "%d-%m-%Y %I:%M %p")
             mating_dt = mating_dt.replace(tzinfo=MAKKAH_TZ)
         except ValueError:
-            await interaction.response.send_message("❌ صيغة التاريخ غير صحيحة! يرجى استخدام الصيغة: `DD-MM-YYYY hh:mm AM/PM` (مثال: `23-09-2026 03:30 PM`)", ephemeral=True)
+            await interaction.followup.send("❌ صيغة التاريخ غير صحيحة! يرجى استخدام الصيغة: `DD-MM-YYYY hh:mm AM/PM` (مثال: `23-09-2026 03:30 PM`)", ephemeral=True)
             return
 
         ready_dt = mating_dt + timedelta(days=2)
@@ -484,7 +488,7 @@ class HorseBreedModal(discord.ui.Modal, title="حاسبة تزاوج وإنتا�
         embed.add_field(name="وقت الإنتاج المتوقع", value=f"`{format_makkah_time(ready_dt)}`", inline=False)
         embed.add_field(name="الحالة", value=time_text, inline=False)
 
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await interaction.followup.send(embed=embed, ephemeral=True)
 
 @bot.tree.command(name="breed", description="حساب موعد إنتاج الحصان الجديد بناءً على وقت التزاوج (يومان)")
 async def breed_cmd(interaction: discord.Interaction):
