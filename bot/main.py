@@ -383,7 +383,7 @@ async def setup_redm_panel(interaction: discord.Interaction):
     await channel.send(embed=embed, view=RedMAttendanceView(bot))
     await interaction.response.send_message(f"✅ تم إرسال لوحة تحضير RedM بنجاح إلى الروم {channel.mention}.", ephemeral=True)
 
-# ==================== أوامر النقاط والإحصائيات ====================
+# ==================== أوامر النقاط والإحصائيات (متاحة للجميع) ====================
 @bot.tree.command(name="points", description="عرض عدد النقاط الحالية لك أو لأي عضو آخر")
 @app_commands.describe(member="العضو المراد استعلام نقاطه (اختياري)")
 async def points_cmd(interaction: discord.Interaction, member: discord.Member = None):
@@ -437,7 +437,7 @@ async def reset_points(interaction: discord.Interaction, member: discord.Member)
         await db.commit()
     await interaction.response.send_message(f"⚠️ تم تصفير نقاط العضو {member.mention} بنجاح.")
 
-# ==================== نظام تزاوج وإنتاج الخيول ====================
+# ==================== نظام تزاوج وإنتاج الخيول (متاح للجميع) ====================
 class HorseBreedModal(discord.ui.Modal, title="حاسبة تزاوج وإنتاج الخيول 🐎"):
     horse_name = discord.ui.TextInput(label="اسم الحصان", placeholder="أدخل اسم الحصان...", required=True)
     breed_type = discord.ui.TextInput(label="فصيلة الحصان", placeholder="أدخل فصيلة الحصان...", required=True)
@@ -533,7 +533,7 @@ async def remove_breed(interaction: discord.Interaction, row_id: int):
             return
     await interaction.response.send_message(f"🗑️ تم حذف عملية إنتاج الحصان (ID: {row_id}) بنجاح.")
 
-# ==================== أوامر التقديم والخيول ====================
+# ==================== أوامر التقديم والخيول (متاحة للجميع مع أزرار الإدارة المحمية) ====================
 @bot.tree.command(name="apply", description="عرض طريقة التقديم للانضمام لعائلة القودفاذر")
 async def apply_cmd(interaction: discord.Interaction):
     apply_ch = interaction.guild.get_channel(APPLY_CHANNEL_ID)
@@ -583,7 +583,7 @@ async def remove_horse(interaction: discord.Interaction, horse_name: str):
             return
     await interaction.response.send_message(f"🗑️ تم حذف الحصان `{horse_name}` من القائمة بنجاح.")
 
-# ==================== نظام البقالة (Store Vault) ====================
+# ==================== نظام البقالة (Store Vault - متاح للجميع) ====================
 @bot.tree.command(name="store", description="عرض مخزون البقالة بالجرد الحالي")
 async def store_cmd(interaction: discord.Interaction):
     async with aiosqlite.connect(DB_NAME) as db:
@@ -608,7 +608,7 @@ async def store_inv(interaction: discord.Interaction, item_name: str, quantity: 
         await db.commit()
     await interaction.response.send_message(f"✅ تم تحديث مخزون البقالة ({item_name}) بمقدار `{quantity}` بنجاح.")
 
-# ==================== نظام محل الأسلحة (Weapons) ====================
+# ==================== نظام محل الأسلحة (Weapons - متاح للجميع) ====================
 @bot.tree.command(name="weapons", description="عرض خزنة محل الأسلحة بالجرد الحالي")
 async def weapons_cmd(interaction: discord.Interaction):
     async with aiosqlite.connect(DB_NAME) as db:
@@ -633,7 +633,7 @@ async def weapons_inv(interaction: discord.Interaction, item_name: str, quantity
         await db.commit()
     await interaction.response.send_message(f"✅ تم تحديث خزنة الأسلحة ({item_name}) بمقدار `{quantity}` بنجاح.")
 
-# ==================== نظام الحانة (Bar) ====================
+# ==================== نظام الحانة (Bar - متاح للجميع) ====================
 @bot.tree.command(name="bar", description="عرض خزنة الحانة بالجرد الحالي")
 async def bar_cmd(interaction: discord.Interaction):
     async with aiosqlite.connect(DB_NAME) as db:
@@ -658,7 +658,7 @@ async def bar_inv(interaction: discord.Interaction, item_name: str, quantity: in
         await db.commit()
     await interaction.response.send_message(f"✅ تم تحديث خزنة الحانة ({item_name}) بمقدار `{quantity}` بنجاح.")
 
-# ==================== نظام الحداد (Blacksmith & Inventory) ====================
+# ==================== نظام الحداد (Blacksmith & Inventory - متاح للجميع) ====================
 @bot.tree.command(name="blacksmith", description="عرض خزنة الحداد بالجرد الحالي")
 async def blacksmith_cmd(interaction: discord.Interaction):
     async with aiosqlite.connect(DB_NAME) as db:
@@ -683,7 +683,7 @@ async def inventory_cmd(interaction: discord.Interaction, material_name: str, qu
         await db.commit()
     await interaction.response.send_message(f"✅ تم تحديث موارد خزنة الحداد ({material_name}) بمقدار `{quantity}` بنجاح.")
 
-# ==================== أوامر الإدارة الحصرية (لـ Administrator فقط) ====================
+# ==================== أوامر الإدارة الحصرية (لـ Administrator فقط - تصفير وحذف عناصر) ====================
 @bot.tree.command(name="remove_item", description="حذف عنصر معين نهائياً من خزنة محددة (للأدمن فقط)")
 @app_commands.choices(vault_type=[
     app_commands.Choice(name="البقالة", value="store"),
