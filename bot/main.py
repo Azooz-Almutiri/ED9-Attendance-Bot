@@ -174,15 +174,9 @@ async def remove_recent(member_id):
     await asyncio.sleep(10)
     recent_joined.discard(member_id)
 
-# ==================== أمر البرودكاست المخصص مع شرط الرتبة ====================
+# ==================== أمر البرودكاست المخصص ====================
 @bot.command(name="bc")
 async def broadcast_cmd(ctx, *, message_content: str = None):
-    has_required_role = any(r.id == BC_SENDER_ROLE_ID for r in getattr(ctx.author, "roles", []))
-    if not has_required_role and not ctx.author.guild_permissions.administrator:
-        await ctx.message.delete()
-        await ctx.send("❌ عذراً، لا تمتلك الصلاحية أو رتبة إرسال البرودكاست المطلوبة!", delete_after=6)
-        return
-
     try:
         await ctx.message.delete()
     except Exception:
@@ -229,7 +223,6 @@ class ConfirmRedMView(discord.ui.View):
         button.disabled = True
         button.label = "تم التأكيد ✅"
         
-        # الرد على التفاعل بدون إرسال رسالة مزعجة، ثم حذف رسالة التحضير فوراً
         await interaction.response.defer()
         self.stop()
         
@@ -278,7 +271,7 @@ async def start_redm_periodic_check(bot_client, member: discord.Member):
                 except Exception:
                     duration = 0
 
-                earned_points = duration // 60  # كل ساعة = نقطة
+                earned_points = duration // 60
 
                 async with aiosqlite.connect(DB_NAME) as db:
                     await db.execute("UPDATE redm_attendance SET end_time = ?, duration_minutes = ?, points_earned = ? WHERE rowid = ?", 
@@ -348,7 +341,7 @@ class RedMAttendanceView(discord.ui.View):
             except Exception:
                 duration = 0
 
-            earned_points = duration // 60  # كل ساعة حضور = نقطة واحدة
+            earned_points = duration // 60
 
             await db.execute("UPDATE redm_attendance SET end_time = ?, duration_minutes = ?, points_earned = ? WHERE rowid = ?", 
                              (now.isoformat(), duration, earned_points, row_id))
@@ -368,7 +361,7 @@ class RedMAttendanceView(discord.ui.View):
         hours, mins = divmod(duration, 60)
         await interaction.response.send_message(f"🔴 تم تسجيل خروجك من RedM. مدة تواجدك: `{hours} ساعة و {mins} دقيقة` | النقاط المكتسبة: `⭐ {earned_points} نقطة`", ephemeral=True)
 
-@bot.tree.command(name="setup_redm_panel", description="إرسال لوحة تحضير RedM في روم التحضير المخصص (خاص بالإدارة)")
+@bot.tree.command(name="setup_redm_panel", description="إرسال لوحة تحضير RedM في روم التحضير (للأدمن فقط)")
 @app_commands.checks.has_permissions(administrator=True)
 async def setup_redm_panel(interaction: discord.Interaction):
     channel = interaction.guild.get_channel(ATTENDANCE_CHANNEL_ID)
@@ -435,7 +428,7 @@ async def points_list_cmd(interaction: discord.Interaction):
 
     await interaction.response.send_message(embed=embed)
 
-@bot.tree.command(name="reset_points", description="تصفير نقاط عضو معين (خاص بالإدارة)")
+@bot.tree.command(name="reset_points", description="تصفير نقاط عضو معين (للأدمن فقط)")
 @app_commands.describe(member="العضو المراد تصفير نقاطه")
 @app_commands.checks.has_permissions(administrator=True)
 async def reset_points(interaction: discord.Interaction, member: discord.Member):
@@ -444,7 +437,7 @@ async def reset_points(interaction: discord.Interaction, member: discord.Member)
         await db.commit()
     await interaction.response.send_message(f"⚠️ تم تصفير نقاط العضو {member.mention} بنجاح.")
 
-# ==================== نظام تزاوج وإنتاج الخيول (Breed Modal - DD-MM-YYYY hh:mm AM/PM) ====================
+# ==================== نظام تزاوج وإنتاج الخيول ====================
 class HorseBreedModal(discord.ui.Modal, title="حاسبة تزاوج وإنتاج الخيول 🐎"):
     horse_name = discord.ui.TextInput(label="اسم الحصان", placeholder="أدخل اسم الحصان...", required=True)
     breed_type = discord.ui.TextInput(label="فصيلة الحصان", placeholder="أدخل فصيلة الحصان...", required=True)
@@ -528,7 +521,7 @@ async def breed_list_cmd(interaction: discord.Interaction):
             )
     await interaction.response.send_message(embed=embed)
 
-@bot.tree.command(name="remove_breed", description="حذف عملية إنتاج حصان من القائمة (خاص بالإدارة)")
+@bot.tree.command(name="remove_breed", description="حذف عملية إنتاج حصان من القائمة (للأدمن فقط)")
 @app_commands.describe(row_id="رقم الـ ID الخاص بعملية الإنتاج من أمر breed_list")
 @app_commands.checks.has_permissions(administrator=True)
 async def remove_breed(interaction: discord.Interaction, row_id: int):
@@ -567,7 +560,7 @@ async def horses_cmd(interaction: discord.Interaction):
             embed.add_field(name=name, value=f"بواسطة: `{added or 'الإدارة'}`", inline=False)
     await interaction.response.send_message(embed=embed)
 
-@bot.tree.command(name="add_horse", description="إضافة حصان جديد للقائمة (خاص بالإدارة)")
+@bot.tree.command(name="add_horse", description="إضافة حصان جديد للقائمة (للأدمن فقط)")
 @app_commands.describe(horse_name="اسم الحصان المراد إضافته")
 @app_commands.checks.has_permissions(administrator=True)
 async def add_horse(interaction: discord.Interaction, horse_name: str):
@@ -578,7 +571,7 @@ async def add_horse(interaction: discord.Interaction, horse_name: str):
         await db.commit()
     await interaction.response.send_message(f"✅ تم إضافة الحصان `{horse_name}` للقائمة بنجاح.")
 
-@bot.tree.command(name="remove_horse", description="حذف حصان من القائمة (خاص بالإدارة)")
+@bot.tree.command(name="remove_horse", description="حذف حصان من القائمة (للأدمن فقط)")
 @app_commands.describe(horse_name="اسم الحصان المراد حذفه")
 @app_commands.checks.has_permissions(administrator=True)
 async def remove_horse(interaction: discord.Interaction, horse_name: str):
@@ -606,7 +599,6 @@ async def store_cmd(interaction: discord.Interaction):
 
 @bot.tree.command(name="store_inv", description="إضافة أو خصم (بالسالب) أغراض مخزون البقالة")
 @app_commands.describe(item_name="اسم المنتج أو الغرض", quantity="الكمية")
-@app_commands.checks.has_permissions(manage_guild=True)
 async def store_inv(interaction: discord.Interaction, item_name: str, quantity: int):
     async with aiosqlite.connect(DB_NAME) as db:
         await db.execute('''
@@ -632,7 +624,6 @@ async def weapons_cmd(interaction: discord.Interaction):
 
 @bot.tree.command(name="weapons_inv", description="إضافة أو خصم (بالسالب) أسلحة وذخيرة خزنة الأسلحة")
 @app_commands.describe(item_name="اسم السلاح أو المورد", quantity="الكمية")
-@app_commands.checks.has_permissions(manage_guild=True)
 async def weapons_inv(interaction: discord.Interaction, item_name: str, quantity: int):
     async with aiosqlite.connect(DB_NAME) as db:
         await db.execute('''
@@ -658,7 +649,6 @@ async def bar_cmd(interaction: discord.Interaction):
 
 @bot.tree.command(name="bar_inv", description="إضافة أو خصم (بالسالب) مشروبات/أغراض خزنة الحانة")
 @app_commands.describe(item_name="اسم المشروب أو الغرض", quantity="الكمية")
-@app_commands.checks.has_permissions(manage_guild=True)
 async def bar_inv(interaction: discord.Interaction, item_name: str, quantity: int):
     async with aiosqlite.connect(DB_NAME) as db:
         await db.execute('''
@@ -684,7 +674,6 @@ async def blacksmith_cmd(interaction: discord.Interaction):
 
 @bot.tree.command(name="inventory", description="إضافة أو خصم (بالسالب) موارد خزنة الحداد")
 @app_commands.describe(material_name="اسم المورد", quantity="الكمية")
-@app_commands.checks.has_permissions(manage_guild=True)
 async def inventory_cmd(interaction: discord.Interaction, material_name: str, quantity: int):
     async with aiosqlite.connect(DB_NAME) as db:
         await db.execute('''
@@ -708,8 +697,8 @@ async def skip_music(interaction: discord.Interaction):
 async def stop_music(interaction: discord.Interaction):
     await interaction.response.send_message("⏹️ تم إيقاف الصوت ومغادرة القناة الصوتية بنجاح.")
 
-# ==================== أوامر الإدارة المتقدمة (حذف وتصفير) ====================
-@bot.tree.command(name="remove_item", description="حذف عنصر معين نهائياً من خزنة محددة")
+# ==================== أوامر الإدارة الحصرية (لـ Administrator فقط) ====================
+@bot.tree.command(name="remove_item", description="حذف عنصر معين نهائياً من خزنة محددة (للأدمن فقط)")
 @app_commands.choices(vault_type=[
     app_commands.Choice(name="البقالة", value="store"),
     app_commands.Choice(name="محل الأسلحة", value="weapons"),
@@ -717,7 +706,7 @@ async def stop_music(interaction: discord.Interaction):
     app_commands.Choice(name="الحداد", value="blacksmith")
 ])
 @app_commands.describe(vault_type="اختر الخزنة", item_name="اسم العنصر المراد حذفه نهائياً")
-@app_commands.checks.has_permissions(manage_guild=True)
+@app_commands.checks.has_permissions(administrator=True)
 async def remove_item(interaction: discord.Interaction, vault_type: str, item_name: str):
     table_map = {
         "store": "store_vault",
@@ -744,7 +733,7 @@ async def remove_item(interaction: discord.Interaction, vault_type: str, item_na
 
     await interaction.response.send_message(f"🗑️ تم حذف العنصر `{item_name}` من الخزنة بنجاح.")
 
-@bot.tree.command(name="reset_inv", description="تصفير ومسح جرد خزنة معينة بالكامل")
+@bot.tree.command(name="reset_inv", description="تصفير ومسح جرد خزنة معينة بالكامل (للأدمن فقط)")
 @app_commands.choices(vault_type=[
     app_commands.Choice(name="البقالة", value="store"),
     app_commands.Choice(name="محل الأسلحة", value="weapons"),
