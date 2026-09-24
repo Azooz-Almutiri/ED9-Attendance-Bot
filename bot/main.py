@@ -40,10 +40,9 @@ periodic_check_tasks = {}
 async def init_db():
     async with aiosqlite.connect(DB_NAME) as db:
         await db.execute('''
-            CREATE TABLE IF NOT EXISTS general_vaults (
-                vault_name TEXT PRIMARY KEY,
-                balance INTEGER DEFAULT 0,
-                last_updated TEXT
+            CREATE TABLE IF NOT EXISTS store_vault (
+                item_name TEXT PRIMARY KEY,
+                quantity INTEGER DEFAULT 0
             )
         ''')
         await db.execute('''
@@ -229,8 +228,15 @@ class ConfirmRedMView(discord.ui.View):
         self.confirmed = True
         button.disabled = True
         button.label = "تم التأكيد ✅"
-        await interaction.response.edit_message(content=f"✅ {interaction.user.mention} تم تأكيد استمرار تحضيرك بنجاح!", view=self)
+        
+        # الرد على التفاعل بدون إرسال رسالة مزعجة، ثم حذف رسالة التحضير فوراً
+        await interaction.response.defer()
         self.stop()
+        
+        try:
+            await interaction.message.delete()
+        except Exception:
+            pass
 
 async def start_redm_periodic_check(bot_client, member: discord.Member):
     try:
@@ -286,7 +292,7 @@ async def start_redm_periodic_check(bot_client, member: discord.Member):
 
                 if msg:
                     try:
-                        await msg.edit(content=f"❌ {member.mention} **تم تسجيل خروجك تلقائياً** لعدم إجابتك على تأكيد التواجد خلال المدة المحددة.", view=None)
+                        await msg.delete()
                     except Exception:
                         pass
                 break
@@ -584,28 +590,31 @@ async def remove_horse(interaction: discord.Interaction, horse_name: str):
             return
     await interaction.response.send_message(f"🗑️ تم حذف الحصان `{horse_name}` من القائمة بنجاح.")
 
-# ==================== نظام الستور / الخزنة العامة ====================
-@bot.tree.command(name="store", description="عرض خزنة الستور بالجرد الحالي")
+# ==================== نظام البقالة (Store Vault) ====================
+@bot.tree.command(name="store", description="عرض مخزون البقالة بالجرد الحالي")
 async def store_cmd(interaction: discord.Interaction):
     async with aiosqlite.connect(DB_NAME) as db:
-        async with db.execute("SELECT vault_name, balance FROM general_vaults WHERE vault_name = 'store'") as cursor:
-            row = await cursor.fetchone()
-    balance = row[1] if row else 0
-    embed = discord.Embed(title="📦 خزنة الستور - GODFATHER FAMILY", color=discord.Color.blue(), timestamp=get_makkah_now())
-    embed.add_field(name="💰 الرصيد / الموارد الحالية", value=f"`{balance:,}`", inline=False)
+        async with db.execute("SELECT item_name, quantity FROM store_vault") as cursor:
+            rows = await cursor.fetchall()
+    embed = discord.Embed(title="🛒 مخزون البقالة - GODFATHER FAMILY", color=discord.Color.blue(), timestamp=get_makkah_now())
+    if not rows:
+        embed.description = "مخزون البقالة فارغ حالياً."
+    else:
+        for item, qty in rows:
+            embed.add_field(name=item, value=f"الكمية: `{qty:,}`", inline=True)
     await interaction.response.send_message(embed=embed)
 
-@bot.tree.command(name="store_inv", description="إضافة أو خصم (بالسالب) أغراض خزنة الستور")
-@app_commands.describe(amount="الكمية المراد إضافتها أو خصمها")
+@bot.tree.command(name="store_inv", description="إضافة أو خصم (بالسالب) أغراض مخزون البقالة")
+@app_commands.describe(item_name="اسم المنتج أو الغرض", quantity="الكمية")
 @app_commands.checks.has_permissions(manage_guild=True)
-async def store_inv(interaction: discord.Interaction, amount: int):
+async def store_inv(interaction: discord.Interaction, item_name: str, quantity: int):
     async with aiosqlite.connect(DB_NAME) as db:
         await db.execute('''
-            INSERT INTO general_vaults (vault_name, balance, last_updated) VALUES ('store', ?, ?)
-            ON CONFLICT(vault_name) DO UPDATE SET balance = balance + ?, last_updated = ?
-        ''', (amount, format_makkah_time(get_makkah_now()), amount, format_makkah_time(get_makkah_now())))
+            INSERT INTO store_vault (item_name, quantity) VALUES (?, ?)
+            ON CONFLICT(item_name) DO UPDATE SET quantity = quantity + ?
+        ''', (item_name, quantity, quantity))
         await db.commit()
-    await interaction.response.send_message(f"✅ تم تحديث جرد خزنة الستور بمقدار `{amount}` بنجاح.")
+    await interaction.response.send_message(f"✅ تم تحديث مخزون البقالة ({item_name}) بمقدار `{quantity}` بنجاح.")
 
 # ==================== نظام محل الأسلحة (Weapons) ====================
 @bot.tree.command(name="weapons", description="عرض خزنة محل الأسلحة بالجرد الحالي")
@@ -702,6 +711,7 @@ async def stop_music(interaction: discord.Interaction):
 # ==================== أوامر الإدارة المتقدمة (حذف وتصفير) ====================
 @bot.tree.command(name="remove_item", description="حذف عنصر معين نهائياً من خزنة محددة")
 @app_commands.choices(vault_type=[
+    app_commands.Choice(name="البقالة", value="store"),
     app_commands.Choice(name="محل الأسلحة", value="weapons"),
     app_commands.Choice(name="الحانة", value="bar"),
     app_commands.Choice(name="الحداد", value="blacksmith")
@@ -710,11 +720,13 @@ async def stop_music(interaction: discord.Interaction):
 @app_commands.checks.has_permissions(manage_guild=True)
 async def remove_item(interaction: discord.Interaction, vault_type: str, item_name: str):
     table_map = {
+        "store": "store_vault",
         "weapons": "weapons_vault",
         "bar": "bar_vault",
         "blacksmith": "blacksmith_vault"
     }
     column_map = {
+        "store": "item_name",
         "weapons": "item_name",
         "bar": "item_name",
         "blacksmith": "material_name"
@@ -734,7 +746,7 @@ async def remove_item(interaction: discord.Interaction, vault_type: str, item_na
 
 @bot.tree.command(name="reset_inv", description="تصفير ومسح جرد خزنة معينة بالكامل")
 @app_commands.choices(vault_type=[
-    app_commands.Choice(name="خزنة الستور", value="store"),
+    app_commands.Choice(name="البقالة", value="store"),
     app_commands.Choice(name="محل الأسلحة", value="weapons"),
     app_commands.Choice(name="الحانة", value="bar"),
     app_commands.Choice(name="الحداد", value="blacksmith")
@@ -744,7 +756,7 @@ async def remove_item(interaction: discord.Interaction, vault_type: str, item_na
 async def reset_inv(interaction: discord.Interaction, vault_type: str):
     async with aiosqlite.connect(DB_NAME) as db:
         if vault_type == "store":
-            await db.execute("DELETE FROM general_vaults WHERE vault_name = 'store'")
+            await db.execute("DELETE FROM store_vault")
         elif vault_type == "weapons":
             await db.execute("DELETE FROM weapons_vault")
         elif vault_type == "bar":
