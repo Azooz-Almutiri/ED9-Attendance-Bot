@@ -128,11 +128,8 @@ bot = GodfatherBot()
 async def on_ready():
     print(f"Logged in as {bot.user.name} ({bot.user.id})")
     try:
-        # مزامنة فورية للأوامر على مستوى السيرفرات لضمان عدم تعليق الأوامر
-        for guild in bot.guilds:
-            bot.tree.copy_global_to(guild=guild)
-            await bot.tree.sync(guild=guild)
-        print("✅ Synced slash commands successfully to all guilds.")
+        synced = await bot.tree.sync()
+        print(f"✅ Synced {len(synced)} slash commands.")
     except Exception as e:
         print(f"❌ Failed to sync: {e}")
 
@@ -443,7 +440,7 @@ async def reset_points(interaction: discord.Interaction, member: discord.Member)
 # ==================== نظام تزاوج وإنتاج الخيول (متاح للجميع) ====================
 class HorseBreedModal(discord.ui.Modal, title="حاسبة تزاوج وإنتاج الخيول 🐎"):
     def __init__(self):
-        super().__init__()
+        super().__init__(timeout=None)
 
     horse_name = discord.ui.TextInput(label="اسم الحصان", placeholder="أدخل اسم الحصان...", required=True)
     breed_type = discord.ui.TextInput(label="فصيلة الحصان", placeholder="أدخل فصيلة الحصان...", required=True)
@@ -459,7 +456,8 @@ class HorseBreedModal(discord.ui.Modal, title="حاسبة تزاوج وإنتا�
             await interaction.followup.send("❌ صيغة التاريخ غير صحيحة! يرجى استخدام الصيغة: `DD-MM-YYYY hh:mm AM/PM` (مثال: `23-09-2026 03:30 PM`)", ephemeral=True)
             return
 
-        ready_dt = mating_dt + timedelta(days=2)
+        # ضبط مدة التزاوج لتكون بالضبط 48 ساعة (يومان) من وقت التزاوج المُدخل
+        ready_dt = mating_dt + timedelta(hours=48)
         
         async with aiosqlite.connect(DB_NAME) as db:
             await db.execute(
@@ -472,15 +470,19 @@ class HorseBreedModal(discord.ui.Modal, title="حاسبة تزاوج وإنتا�
         remaining = ready_dt - now
 
         if remaining.total_seconds() > 0:
-            rem_hours = int(remaining.total_seconds() // 3600)
+            rem_days = int(remaining.total_seconds() // 86400)
+            rem_hours = int((remaining.total_seconds() % 86400) // 3600)
             rem_mins = int((remaining.total_seconds() % 3600) // 60)
-            time_text = f"باقي على الإنتاج: `{rem_hours} ساعة و {rem_mins} دقيقة`"
+            if rem_days > 0:
+                time_text = f"باقي على الإنتاج: `{rem_days} يوم و {rem_hours} ساعة و {rem_mins} دقيقة`"
+            else:
+                time_text = f"باقي على الإنتاج: `{rem_hours} ساعة و {rem_mins} دقيقة`"
         else:
             time_text = "🟢 **انتهت مدة الإنتاج وجاهز للحصاد!**"
 
         embed = discord.Embed(
             title="🐎 تم تسجيل عملية تزاوج الحصان بنجاح",
-            description=f"تم حفظ تفاصيل الإنتاج وحساب الموعد بدقة (مدة الإنتاج: **يومان**).",
+            description=f"تم حفظ تفاصيل الإنتاج وحساب الموعد بدقة (مدة الإنتاج: **48 ساعة / يومان**).",
             color=discord.Color.gold(),
             timestamp=get_makkah_now()
         )
@@ -493,7 +495,7 @@ class HorseBreedModal(discord.ui.Modal, title="حاسبة تزاوج وإنتا�
 
         await interaction.followup.send(embed=embed, ephemeral=True)
 
-@bot.tree.command(name="breed", description="حساب موعد إنتاج الحصان الجديد بناءً على وقت التزاوج (يومان)")
+@bot.tree.command(name="breed", description="حساب موعد إنتاج الحصان الجديد بناءً على وقت التزاوج (يومان / 48 ساعة)")
 async def breed_cmd(interaction: discord.Interaction):
     await interaction.response.send_modal(HorseBreedModal())
 
@@ -503,7 +505,7 @@ async def breed_list_cmd(interaction: discord.Interaction):
         async with db.execute("SELECT rowid, horse_name, breed_type, horse_age, ready_time FROM horse_breeding") as cursor:
             rows = await cursor.fetchall()
 
-    embed = discord.Embed(title="🐎 قائمة إنتاج وتزاوج الخيول الحالية", color=discord.Color.dark_red(), timestamp=get_makkah_now())
+    embed = discord.Embed(title="🐎 قائمة إنتاج وتزاوج الخيول الحالية (48 ساعة)", color=discord.Color.dark_red(), timestamp=get_makkah_now())
     if not rows:
         embed.description = "لا توجد عمليات تزاوج أو إنتاج مسجلة حالياً."
     else:
@@ -513,9 +515,13 @@ async def breed_list_cmd(interaction: discord.Interaction):
                 ready_dt = datetime.fromisoformat(ready_str)
                 remaining = ready_dt - now
                 if remaining.total_seconds() > 0:
-                    rh = int(remaining.total_seconds() // 3600)
+                    rd = int(remaining.total_seconds() // 86400)
+                    rh = int((remaining.total_seconds() % 86400) // 3600)
                     rm = int((remaining.total_seconds() % 3600) // 60)
-                    status = f"⏳ باقي: {rh}س {rm}د"
+                    if rd > 0:
+                        status = f"⏳ باقي: {rd}ي {rh}س {rm}د"
+                    else:
+                        status = f"⏳ باقي: {rh}س {rm}د"
                 else:
                     status = "🟢 جاهز للإنتاج!"
             except Exception:
