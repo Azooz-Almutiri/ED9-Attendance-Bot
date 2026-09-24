@@ -683,20 +683,6 @@ async def inventory_cmd(interaction: discord.Interaction, material_name: str, qu
         await db.commit()
     await interaction.response.send_message(f"✅ تم تحديث موارد خزنة الحداد ({material_name}) بمقدار `{quantity}` بنجاح.")
 
-# ==================== نظام الأغاني ====================
-@bot.tree.command(name="play", description="تشغيل مقطع صوتي أو أغنية من يوتيوب")
-@app_commands.describe(query="اسم الأغنية أو الرابط")
-async def play_music(interaction: discord.Interaction, query: str):
-    await interaction.response.send_message(f"🎵 جاري البحث والتشغيل لـ: `{query}` 🎧")
-
-@bot.tree.command(name="skip", description="تخطي الأغنية الحالية")
-async def skip_music(interaction: discord.Interaction):
-    await interaction.response.send_message("⏭️ تم تخطي الأغنية الحالية بنجاح.")
-
-@bot.tree.command(name="stop", description="إيقاف الأغنية وإخراج البوت من الروم الصوتي")
-async def stop_music(interaction: discord.Interaction):
-    await interaction.response.send_message("⏹️ تم إيقاف الصوت ومغادرة القناة الصوتية بنجاح.")
-
 # ==================== أوامر الإدارة الحصرية (لـ Administrator فقط) ====================
 @bot.tree.command(name="remove_item", description="حذف عنصر معين نهائياً من خزنة محددة (للأدمن فقط)")
 @app_commands.choices(vault_type=[
