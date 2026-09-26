@@ -226,8 +226,17 @@ class ConfirmRedMView(discord.ui.View):
         await interaction.response.defer()
         self.stop()
         
+        # حذف رسالة التحضير فوراً عند الضغط على زر التأكيد
         try:
             await interaction.message.delete()
+        except Exception:
+            pass
+
+    async def on_timeout(self):
+        # حذف رسالة التحضير تلقائياً عند انتهاء المهلة (10 دقائق)
+        try:
+            if self.message:
+                await self.message.delete()
         except Exception:
             pass
 
@@ -258,6 +267,7 @@ async def start_redm_periodic_check(bot_client, member: discord.Member):
                     "يرجى الضغط على الزر أدناه خلال **10 دقائق** لتأكيد تواجدك، وإلا سيتم تسجيل خروجك تلقائياً.",
                     view=view
                 )
+                view.message = msg # حفظ مرجع الرسالة للتعامل مع الـ timeout
             except Exception:
                 pass
 
@@ -456,7 +466,6 @@ class HorseBreedModal(discord.ui.Modal, title="حاسبة تزاوج وإنتا�
             await interaction.followup.send("❌ صيغة التاريخ غير صحيحة! يرجى استخدام الصيغة: `DD-MM-YYYY hh:mm AM/PM` (مثال: `23-09-2026 03:30 PM`)", ephemeral=True)
             return
 
-        # ضبط مدة التزاوج لتكون بالضبط 48 ساعة (يومان) من وقت التزاوج المُدخل
         ready_dt = mating_dt + timedelta(hours=48)
         
         async with aiosqlite.connect(DB_NAME) as db:
