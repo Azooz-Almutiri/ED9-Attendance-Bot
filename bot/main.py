@@ -226,14 +226,12 @@ class ConfirmRedMView(discord.ui.View):
         await interaction.response.defer()
         self.stop()
         
-        # حذف رسالة التحضير فوراً عند الضغط على زر التأكيد
         try:
             await interaction.message.delete()
         except Exception:
             pass
 
     async def on_timeout(self):
-        # حذف رسالة التحضير تلقائياً عند انتهاء المهلة (10 دقائق)
         try:
             if self.message:
                 await self.message.delete()
@@ -267,7 +265,7 @@ async def start_redm_periodic_check(bot_client, member: discord.Member):
                     "يرجى الضغط على الزر أدناه خلال **10 دقائق** لتأكيد تواجدك، وإلا سيتم تسجيل خروجك تلقائياً.",
                     view=view
                 )
-                view.message = msg # حفظ مرجع الرسالة للتعامل مع الـ timeout
+                view.message = msg
             except Exception:
                 pass
 
