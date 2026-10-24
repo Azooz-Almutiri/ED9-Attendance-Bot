@@ -24,45 +24,20 @@ DB_NAME = "godfather_jobs.db"
 
 # ==================== الثوابت والمعرفات المطلوبة ====================
 BROADCAST_ROLE_ID = 1550542997010251927      # رتبة استلام البرودكاست
-BC_SENDER_ROLE_ID = 1544440717815054378      # رتبة السماح بإرسال البرودكاست (Bot)
 WELCOME_ROLE_ID = 1550543013317447680        # الرول الذي يعطى للعضو عند دخوله
 RULES_CHANNEL_ID = 1550543164723564636       # روم القوانين
 APPLY_CHANNEL_ID = 1550543173300781116       # روم طلب التقديم
-WELCOME_CHANNEL_ID = 1550543159321427978    # روم مرحبا بك (الترحيب)
+WELCOME_CHANNEL_ID = 1550543159321427978    # روم الترحيب
 ATTENDANCE_CHANNEL_ID = 1552244246764064818  # روم تحضير RedM
 
-CHECK_INTERVAL = 3600         # التحقق كل ساعة (3600 ثانية)
-CONFIRM_TIMEOUT = 600         # 10 دقائق مهلة للرد على تأكيد التواجد
+CHECK_INTERVAL = 3600         # التحقق كل ساعة
+CONFIRM_TIMEOUT = 600         # 10 دقائق مهلة للرد
 
 periodic_check_tasks = {}
 
 # ==================== تهيئة قاعدة البيانات ====================
 async def init_db():
     async with aiosqlite.connect(DB_NAME) as db:
-        await db.execute('''
-            CREATE TABLE IF NOT EXISTS store_vault (
-                item_name TEXT PRIMARY KEY,
-                quantity INTEGER DEFAULT 0
-            )
-        ''')
-        await db.execute('''
-            CREATE TABLE IF NOT EXISTS weapons_vault (
-                item_name TEXT PRIMARY KEY,
-                quantity INTEGER DEFAULT 0
-            )
-        ''')
-        await db.execute('''
-            CREATE TABLE IF NOT EXISTS bar_vault (
-                item_name TEXT PRIMARY KEY,
-                quantity INTEGER DEFAULT 0
-            )
-        ''')
-        await db.execute('''
-            CREATE TABLE IF NOT EXISTS blacksmith_vault (
-                material_name TEXT PRIMARY KEY,
-                quantity INTEGER DEFAULT 0
-            )
-        ''')
         await db.execute('''
             CREATE TABLE IF NOT EXISTS horses (
                 horse_name TEXT PRIMARY KEY,
@@ -141,15 +116,14 @@ async def on_member_join(member: discord.Member):
     if member.id in recent_joined:
         return
     recent_joined.add(member.id)
-    
     asyncio.create_task(remove_recent(member.id))
 
     role = member.guild.get_role(WELCOME_ROLE_ID)
     if role:
         try:
             await member.add_roles(role)
-        except Exception as e:
-            print(f"فشل في إعطاء الرول للعضو: {e}")
+        except Exception:
+            pass
 
     channel = member.guild.get_channel(WELCOME_CHANNEL_ID)
     if channel:
@@ -222,19 +196,10 @@ class ConfirmRedMView(discord.ui.View):
         self.confirmed = True
         button.disabled = True
         button.label = "تم التأكيد ✅"
-        
         await interaction.response.defer()
         self.stop()
-        
         try:
             await interaction.message.delete()
-        except Exception:
-            pass
-
-    async def on_timeout(self):
-        try:
-            if self.message:
-                await self.message.delete()
         except Exception:
             pass
 
@@ -251,13 +216,9 @@ async def start_redm_periodic_check(bot_client, member: discord.Member):
 
             channel = bot_client.get_channel(ATTENDANCE_CHANNEL_ID)
             if not channel:
-                try:
-                    channel = await bot_client.fetch_channel(ATTENDANCE_CHANNEL_ID)
-                except Exception:
-                    break
+                break
 
             view = ConfirmRedMView(member.id)
-            msg = None
             try:
                 msg = await channel.send(
                     f"⚠️ {member.mention} **تأكيد حضور دوري:**\n"
@@ -265,7 +226,6 @@ async def start_redm_periodic_check(bot_client, member: discord.Member):
                     "يرجى الضغط على الزر أدناه خلال **10 دقائق** لتأكيد تواجدك، وإلا سيتم تسجيل خروجك تلقائياً.",
                     view=view
                 )
-                view.message = msg
             except Exception:
                 pass
 
@@ -274,11 +234,7 @@ async def start_redm_periodic_check(bot_client, member: discord.Member):
             if not view.confirmed:
                 now = get_makkah_now()
                 row_id, start_str = active_session
-                try:
-                    duration = max(0, int((now - datetime.fromisoformat(str(start_str))).total_seconds() // 60))
-                except Exception:
-                    duration = 0
-
+                duration = max(0, int((now - datetime.fromisoformat(str(start_str))).total_seconds() // 60))
                 earned_points = duration // 60
 
                 async with aiosqlite.connect(DB_NAME) as db:
@@ -290,12 +246,6 @@ async def start_redm_periodic_check(bot_client, member: discord.Member):
                             ON CONFLICT(user_id) DO UPDATE SET total_points = total_points + ?, user_name = ?
                         ''', (member.id, member.display_name, earned_points, earned_points, member.display_name))
                     await db.commit()
-
-                if msg:
-                    try:
-                        await msg.delete()
-                    except Exception:
-                        pass
                 break
     except asyncio.CancelledError:
         pass
@@ -344,11 +294,7 @@ class RedMAttendanceView(discord.ui.View):
                 return
 
             row_id, start_str = active_session
-            try:
-                duration = max(0, int((now - datetime.fromisoformat(str(start_str))).total_seconds() // 60))
-            except Exception:
-                duration = 0
-
+            duration = max(0, int((now - datetime.fromisoformat(str(start_str))).total_seconds() // 60))
             earned_points = duration // 60
 
             await db.execute("UPDATE redm_attendance SET end_time = ?, duration_minutes = ?, points_earned = ? WHERE rowid = ?", 
@@ -369,31 +315,23 @@ class RedMAttendanceView(discord.ui.View):
         hours, mins = divmod(duration, 60)
         await interaction.response.send_message(f"🔴 تم تسجيل خروجك من RedM. مدة تواجدك: `{hours} ساعة و {mins} دقيقة` | النقاط المكتسبة: `⭐ {earned_points} نقطة`", ephemeral=True)
 
-@bot.tree.command(name="setup_redm_panel", description="إرسال لوحة تحضير RedM في روم التحضير (للأدمن فقط)")
+@bot.tree.command(name="setup_redm_panel", description="إرسال لوحة تحضير RedM في الروم الحالي")
 @app_commands.checks.has_permissions(administrator=True)
 async def setup_redm_panel(interaction: discord.Interaction):
-    channel = interaction.guild.get_channel(ATTENDANCE_CHANNEL_ID)
-    if not channel:
-        await interaction.response.send_message("❌ روم التحضير المخصص غير موجود أو خطأ في المعرف!", ephemeral=True)
-        return
-
     embed = discord.Embed(
         title="⚔️ تحضير RedM",
         description="استخدم الأزرار بالأسفل لتسجيل حضورك في RedM.\n\n"
-                    "🟢 **دخول RedM**\n"
-                    "اضغط عند دخولك للسيرفر لبدء احتساب الوقت.\n\n"
-                    "🔴 **خروج RedM**\n"
-                    "اضغط عند انتهائك لإيقاف احتساب الوقت.\n\n"
+                    "🟢 **دخول RedM**\nاضغط عند دخولك للسيرفر لبدء احتساب الوقت.\n\n"
+                    "🔴 **خروج RedM**\nاضغط عند انتهائك لإيقاف احتساب الوقت.\n\n"
                     "⭐ **كل ساعة تواجد = 1 نقطة**",
         color=discord.Color.red(),
         timestamp=get_makkah_now()
     )
-    await channel.send(embed=embed, view=RedMAttendanceView(bot))
-    await interaction.response.send_message(f"✅ تم إرسال لوحة تحضير RedM بنجاح إلى الروم {channel.mention}.", ephemeral=True)
+    await interaction.channel.send(embed=embed, view=RedMAttendanceView(bot))
+    await interaction.response.send_message("✅ تم إرسال لوحة تحضير RedM بنجاح في هذا الروم.", ephemeral=True)
 
-# ==================== أوامر النقاط والإحصائيات (متاحة للجميع) ====================
+# ==================== أوامر النقاط والإحصائيات ====================
 @bot.tree.command(name="points", description="عرض عدد النقاط الحالية لك أو لأي عضو آخر")
-@app_commands.describe(member="العضو المراد استعلام نقاطه (اختياري)")
 async def points_cmd(interaction: discord.Interaction, member: discord.Member = None):
     target = member or interaction.user
     async with aiosqlite.connect(DB_NAME) as db:
@@ -403,57 +341,33 @@ async def points_cmd(interaction: discord.Interaction, member: discord.Member = 
     points = row[0] if row else 0
     embed = discord.Embed(
         title="⭐ نظام نقاط تحضير RedM",
-        description=f"العضو: {target.mention}\nرصيد النقاط الحالي: **`{points:,} نقطة`** (كل ساعة = نقطة)",
+        description=f"العضو: {target.mention}\nرصيد النقاط الحالي: **`{points:,} نقطة`**",
         color=discord.Color.gold(),
         timestamp=get_makkah_now()
     )
     await interaction.response.send_message(embed=embed)
 
-@bot.tree.command(name="points_list", description="عرض قائمة بجميع الأعضاء الذين لديهم نقاط وعدد الأشخاص الإجمالي")
-async def points_list_cmd(interaction: discord.Interaction):
-    async with aiosqlite.connect(DB_NAME) as db:
-        async with db.execute("SELECT user_id, user_name, total_points FROM member_points WHERE total_points > 0 ORDER BY total_points DESC") as cursor:
-            rows = await cursor.fetchall()
+# ==================== نظام تزاوج الخيول المطور (خيارات منسدلة سهلة) ====================
+HORSE_TYPES = [
+    "العربي الدتش",
+    "العربي الابليسي",
+    "العربي الاسود",
+    "الشير الابيض",
+    "الشير الاسود"
+]
 
-    total_members_with_points = len(rows)
-
-    embed = discord.Embed(
-        title="📊 قائمة نقاط أعضاء RedM (ساعة = نقطة)",
-        description=f"إجمالي عدد الأعضاء الذين لديهم نقاط: **`{total_members_with_points} عضو`**",
-        color=discord.Color.dark_red(),
-        timestamp=get_makkah_now()
-    )
-
-    if not rows:
-        embed.add_field(name="لا توجد نقاط مسجلة", value="لم يحصل أي عضو على نقاط حتى الآن.", inline=False)
-    else:
-        for idx, (u_id, u_name, pts) in enumerate(rows, 1):
-            embed.add_field(
-                name=f"{idx}. {u_name or 'عضو'} (ID: {u_id})",
-                value=f"النقاط: **`{pts} نقطة`**",
-                inline=False
-            )
-
-    await interaction.response.send_message(embed=embed)
-
-@bot.tree.command(name="reset_points", description="تصفير نقاط عضو معين (للأدمن فقط)")
-@app_commands.describe(member="العضو المراد تصفير نقاطه")
-@app_commands.checks.has_permissions(administrator=True)
-async def reset_points(interaction: discord.Interaction, member: discord.Member):
-    async with aiosqlite.connect(DB_NAME) as db:
-        await db.execute("UPDATE member_points SET total_points = 0 WHERE user_id = ?", (member.id,))
-        await db.commit()
-    await interaction.response.send_message(f"⚠️ تم تصفير نقاط العضو {member.mention} بنجاح.")
-
-# ==================== نظام تزاوج وإنتاج الخيول (متاح للجميع) ====================
-class HorseBreedModal(discord.ui.Modal, title="حاسبة تزاوج وإنتاج الخيول 🐎"):
-    def __init__(self):
+class HorseBreedModalDetails(discord.ui.Modal, title="تفاصيل تزاوج الحصان 🐎"):
+    def __init__(self, selected_breed: str):
         super().__init__(timeout=None)
+        self.selected_breed = selected_breed
 
     horse_name = discord.ui.TextInput(label="اسم الحصان", placeholder="أدخل اسم الحصان...", required=True)
-    breed_type = discord.ui.TextInput(label="فصيلة الحصان", placeholder="أدخل فصيلة الحصان...", required=True)
     horse_age = discord.ui.TextInput(label="عمر الحصان", placeholder="أدخل عمر الحصان...", required=True)
-    mating_date = discord.ui.TextInput(label="تاريخ ووقت التزاوج", placeholder="DD-MM-YYYY hh:mm AM/PM (مثال: 23-09-2026 03:30 PM)", required=True)
+    mating_date = discord.ui.TextInput(
+        label="تاريخ ووقت التزاوج", 
+        placeholder="DD-MM-YYYY hh:mm AM/PM (مثال: 24-10-2026 03:30 PM)", 
+        required=True
+    )
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
@@ -461,7 +375,7 @@ class HorseBreedModal(discord.ui.Modal, title="حاسبة تزاوج وإنتا�
             mating_dt = datetime.strptime(self.mating_date.value.strip(), "%d-%m-%Y %I:%M %p")
             mating_dt = mating_dt.replace(tzinfo=MAKKAH_TZ)
         except ValueError:
-            await interaction.followup.send("❌ صيغة التاريخ غير صحيحة! يرجى استخدام الصيغة: `DD-MM-YYYY hh:mm AM/PM` (مثال: `23-09-2026 03:30 PM`)", ephemeral=True)
+            await interaction.followup.send("❌ صيغة التاريخ غير صحيحة! يرجى الاستخدام مثال: `24-10-2026 03:30 PM`", ephemeral=True)
             return
 
         ready_dt = mating_dt + timedelta(hours=48)
@@ -469,7 +383,7 @@ class HorseBreedModal(discord.ui.Modal, title="حاسبة تزاوج وإنتا�
         async with aiosqlite.connect(DB_NAME) as db:
             await db.execute(
                 "INSERT INTO horse_breeding (user_id, horse_name, breed_type, horse_age, mating_time, ready_time) VALUES (?, ?, ?, ?, ?, ?)",
-                (interaction.user.id, self.horse_name.value, self.breed_type.value, self.horse_age.value, mating_dt.isoformat(), ready_dt.isoformat())
+                (interaction.user.id, self.horse_name.value, self.selected_breed, self.horse_age.value, mating_dt.isoformat(), ready_dt.isoformat())
             )
             await db.commit()
 
@@ -480,21 +394,18 @@ class HorseBreedModal(discord.ui.Modal, title="حاسبة تزاوج وإنتا�
             rem_days = int(remaining.total_seconds() // 86400)
             rem_hours = int((remaining.total_seconds() % 86400) // 3600)
             rem_mins = int((remaining.total_seconds() % 3600) // 60)
-            if rem_days > 0:
-                time_text = f"باقي على الإنتاج: `{rem_days} يوم و {rem_hours} ساعة و {rem_mins} دقيقة`"
-            else:
-                time_text = f"باقي على الإنتاج: `{rem_hours} ساعة و {rem_mins} دقيقة`"
+            time_text = f"باقي على الإنتاج: `{rem_days} يوم و {rem_hours} ساعة و {rem_mins} دقيقة`" if rem_days > 0 else f"باقي على الإنتاج: `{rem_hours} ساعة و {rem_mins} دقيقة`"
         else:
             time_text = "🟢 **انتهت مدة الإنتاج وجاهز للحصاد!**"
 
         embed = discord.Embed(
             title="🐎 تم تسجيل عملية تزاوج الحصان بنجاح",
-            description=f"تم حفظ تفاصيل الإنتاج وحساب الموعد بدقة (مدة الإنتاج: **48 ساعة / يومان**).",
+            description="تم حفظ تفاصيل الإنتاج وحساب الموعد بدقة (مدة الإنتاج: **48 ساعة / يومان**).",
             color=discord.Color.gold(),
             timestamp=get_makkah_now()
         )
         embed.add_field(name="اسم الحصان", value=f"`{self.horse_name.value}`", inline=True)
-        embed.add_field(name="الفصيلة", value=f"`{self.breed_type.value}`", inline=True)
+        embed.add_field(name="الفصيلة المحددة", value=f"`{self.selected_breed}`", inline=True)
         embed.add_field(name="العمر", value=f"`{self.horse_age.value}`", inline=True)
         embed.add_field(name="وقت التزاوج", value=f"`{format_makkah_time(mating_dt)}`", inline=False)
         embed.add_field(name="وقت الإنتاج المتوقع", value=f"`{format_makkah_time(ready_dt)}`", inline=False)
@@ -502,9 +413,21 @@ class HorseBreedModal(discord.ui.Modal, title="حاسبة تزاوج وإنتا�
 
         await interaction.followup.send(embed=embed, ephemeral=True)
 
-@bot.tree.command(name="breed", description="حساب موعد إنتاج الحصان الجديد بناءً على وقت التزاوج (يومان / 48 ساعة)")
+class HorseBreedSelectView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=180)
+
+    @discord.ui.select(
+        placeholder="اختر نوع الحصان للتزاوج 🐎...",
+        options=[discord.SelectOption(label=h_type, value=h_type) for h_type in HORSE_TYPES]
+    )
+    async def select_horse_type(self, interaction: discord.Interaction, select: discord.ui.Select):
+        selected_type = select.values[0]
+        await interaction.response.send_modal(HorseBreedModalDetails(selected_type))
+
+@bot.tree.command(name="breed", description="حساب موعد إنتاج الحصان الجديد (قائمة خيارات منسدلة)")
 async def breed_cmd(interaction: discord.Interaction):
-    await interaction.response.send_modal(HorseBreedModal())
+    await interaction.response.send_message("🐎 **يرجى اختيار نوع الحصان من القائمة التالية:**", view=HorseBreedSelectView(), ephemeral=True)
 
 @bot.tree.command(name="breed_list", description="عرض قائمة جميع عمليات تزاوج وإنتاج الخيول الحالية")
 async def breed_list_cmd(interaction: discord.Interaction):
@@ -525,10 +448,7 @@ async def breed_list_cmd(interaction: discord.Interaction):
                     rd = int(remaining.total_seconds() // 86400)
                     rh = int((remaining.total_seconds() % 86400) // 3600)
                     rm = int((remaining.total_seconds() % 3600) // 60)
-                    if rd > 0:
-                        status = f"⏳ باقي: {rd}ي {rh}س {rm}د"
-                    else:
-                        status = f"⏳ باقي: {rh}س {rm}د"
+                    status = f"⏳ باقي: {rd}ي {rh}س {rm}د" if rd > 0 else f"⏳ باقي: {rh}س {rm}د"
                 else:
                     status = "🟢 جاهز للإنتاج!"
             except Exception:
@@ -542,7 +462,6 @@ async def breed_list_cmd(interaction: discord.Interaction):
     await interaction.response.send_message(embed=embed)
 
 @bot.tree.command(name="remove_breed", description="حذف عملية إنتاج حصان من القائمة (للأدمن فقط)")
-@app_commands.describe(row_id="رقم الـ ID الخاص بعملية الإنتاج من أمر breed_list")
 @app_commands.checks.has_permissions(administrator=True)
 async def remove_breed(interaction: discord.Interaction, row_id: int):
     async with aiosqlite.connect(DB_NAME) as db:
@@ -552,215 +471,6 @@ async def remove_breed(interaction: discord.Interaction, row_id: int):
             await interaction.response.send_message(f"❌ لم يتم العثور على عملية إنتاج بهذا الـ ID ({row_id}).", ephemeral=True)
             return
     await interaction.response.send_message(f"🗑️ تم حذف عملية إنتاج الحصان (ID: {row_id}) بنجاح.")
-
-# ==================== أوامر التقديم والخيول (متاحة للجميع مع أزرار الإدارة المحمية) ====================
-@bot.tree.command(name="apply", description="عرض طريقة التقديم للانضمام لعائلة القودفاذر")
-async def apply_cmd(interaction: discord.Interaction):
-    apply_ch = interaction.guild.get_channel(APPLY_CHANNEL_ID)
-    ch_text = apply_ch.mention if apply_ch else "الروم المخصص"
-    embed = discord.Embed(
-        title="📝 طريقة التقديم لعائلة القودفاذرز",
-        description=f"يرجى قراءة الشروط والتوجه إلى {ch_text} لتقديم طلبك.",
-        color=discord.Color.gold(),
-        timestamp=get_makkah_now()
-    )
-    await interaction.response.send_message(embed=embed, ephemeral=True)
-
-@bot.tree.command(name="horses", description="إرسال قائمة الخيول المتوفرة لدى عائلة القودفاذر")
-async def horses_cmd(interaction: discord.Interaction):
-    async with aiosqlite.connect(DB_NAME) as db:
-        async with db.execute("SELECT horse_name, added_by FROM horses") as cursor:
-            rows = await cursor.fetchall()
-
-    embed = discord.Embed(title="🐎 قائمة خيول عائلة القودفاذر", color=discord.Color.dark_red(), timestamp=get_makkah_now())
-    if not rows:
-        embed.description = "لا توجد خيول مسجلة حالياً."
-    else:
-        for name, added in rows:
-            embed.add_field(name=name, value=f"بواسطة: `{added or 'الإدارة'}`", inline=False)
-    await interaction.response.send_message(embed=embed)
-
-@bot.tree.command(name="add_horse", description="إضافة حصان جديد للقائمة (للأدمن فقط)")
-@app_commands.describe(horse_name="اسم الحصان المراد إضافته")
-@app_commands.checks.has_permissions(administrator=True)
-async def add_horse(interaction: discord.Interaction, horse_name: str):
-    now_str = format_makkah_time(get_makkah_now())
-    async with aiosqlite.connect(DB_NAME) as db:
-        await db.execute("INSERT OR REPLACE INTO horses (horse_name, added_by, added_at) VALUES (?, ?, ?)", 
-                         (horse_name, str(interaction.user), now_str))
-        await db.commit()
-    await interaction.response.send_message(f"✅ تم إضافة الحصان `{horse_name}` للقائمة بنجاح.")
-
-@bot.tree.command(name="remove_horse", description="حذف حصان من القائمة (للأدمن فقط)")
-@app_commands.describe(horse_name="اسم الحصان المراد حذفه")
-@app_commands.checks.has_permissions(administrator=True)
-async def remove_horse(interaction: discord.Interaction, horse_name: str):
-    async with aiosqlite.connect(DB_NAME) as db:
-        cursor = await db.execute("DELETE FROM horses WHERE horse_name = ?", (horse_name,))
-        await db.commit()
-        if cursor.rowcount == 0:
-            await interaction.response.send_message(f"❌ الحصان `{horse_name}` غير موجود بالقائمة.", ephemeral=True)
-            return
-    await interaction.response.send_message(f"🗑️ تم حذف الحصان `{horse_name}` من القائمة بنجاح.")
-
-# ==================== نظام البقالة (Store Vault - متاح للجميع) ====================
-@bot.tree.command(name="store", description="عرض مخزون البقالة بالجرد الحالي")
-async def store_cmd(interaction: discord.Interaction):
-    async with aiosqlite.connect(DB_NAME) as db:
-        async with db.execute("SELECT item_name, quantity FROM store_vault") as cursor:
-            rows = await cursor.fetchall()
-    embed = discord.Embed(title="🛒 مخزون البقالة - GODFATHER FAMILY", color=discord.Color.blue(), timestamp=get_makkah_now())
-    if not rows:
-        embed.description = "مخزون البقالة فارغ حالياً."
-    else:
-        for item, qty in rows:
-            embed.add_field(name=item, value=f"الكمية: `{qty:,}`", inline=True)
-    await interaction.response.send_message(embed=embed)
-
-@bot.tree.command(name="store_inv", description="إضافة أو خصم (بالسالب) أغراض مخزون البقالة")
-@app_commands.describe(item_name="اسم المنتج أو الغرض", quantity="الكمية")
-async def store_inv(interaction: discord.Interaction, item_name: str, quantity: int):
-    async with aiosqlite.connect(DB_NAME) as db:
-        await db.execute('''
-            INSERT INTO store_vault (item_name, quantity) VALUES (?, ?)
-            ON CONFLICT(item_name) DO UPDATE SET quantity = quantity + ?
-        ''', (item_name, quantity, quantity))
-        await db.commit()
-    await interaction.response.send_message(f"✅ تم تحديث مخزون البقالة ({item_name}) بمقدار `{quantity}` بنجاح.")
-
-# ==================== نظام محل الأسلحة (Weapons - متاح للجميع) ====================
-@bot.tree.command(name="weapons", description="عرض خزنة محل الأسلحة بالجرد الحالي")
-async def weapons_cmd(interaction: discord.Interaction):
-    async with aiosqlite.connect(DB_NAME) as db:
-        async with db.execute("SELECT item_name, quantity FROM weapons_vault") as cursor:
-            rows = await cursor.fetchall()
-    embed = discord.Embed(title="🔫 خزنة محل الأسلحة - GODFATHER FAMILY", color=discord.Color.red(), timestamp=get_makkah_now())
-    if not rows:
-        embed.description = "مخزون الأسلحة والذخيرة فارغ حالياً."
-    else:
-        for item, qty in rows:
-            embed.add_field(name=item, value=f"الكمية: `{qty:,}`", inline=True)
-    await interaction.response.send_message(embed=embed)
-
-@bot.tree.command(name="weapons_inv", description="إضافة أو خصم (بالسالب) أسلحة وذخيرة خزنة الأسلحة")
-@app_commands.describe(item_name="اسم السلاح أو المورد", quantity="الكمية")
-async def weapons_inv(interaction: discord.Interaction, item_name: str, quantity: int):
-    async with aiosqlite.connect(DB_NAME) as db:
-        await db.execute('''
-            INSERT INTO weapons_vault (item_name, quantity) VALUES (?, ?)
-            ON CONFLICT(item_name) DO UPDATE SET quantity = quantity + ?
-        ''', (item_name, quantity, quantity))
-        await db.commit()
-    await interaction.response.send_message(f"✅ تم تحديث خزنة الأسلحة ({item_name}) بمقدار `{quantity}` بنجاح.")
-
-# ==================== نظام الحانة (Bar - متاح للجميع) ====================
-@bot.tree.command(name="bar", description="عرض خزنة الحانة بالجرد الحالي")
-async def bar_cmd(interaction: discord.Interaction):
-    async with aiosqlite.connect(DB_NAME) as db:
-        async with db.execute("SELECT item_name, quantity FROM bar_vault") as cursor:
-            rows = await cursor.fetchall()
-    embed = discord.Embed(title="🍻 خزنة الحانة - GODFATHER FAMILY", color=discord.Color.orange(), timestamp=get_makkah_now())
-    if not rows:
-        embed.description = "خزنة الحانة فارغة حالياً."
-    else:
-        for item, qty in rows:
-            embed.add_field(name=item, value=f"الكمية: `{qty:,}`", inline=True)
-    await interaction.response.send_message(embed=embed)
-
-@bot.tree.command(name="bar_inv", description="إضافة أو خصم (بالسالب) مشروبات/أغراض خزنة الحانة")
-@app_commands.describe(item_name="اسم المشروب أو الغرض", quantity="الكمية")
-async def bar_inv(interaction: discord.Interaction, item_name: str, quantity: int):
-    async with aiosqlite.connect(DB_NAME) as db:
-        await db.execute('''
-            INSERT INTO bar_vault (item_name, quantity) VALUES (?, ?)
-            ON CONFLICT(item_name) DO UPDATE SET quantity = quantity + ?
-        ''', (item_name, quantity, quantity))
-        await db.commit()
-    await interaction.response.send_message(f"✅ تم تحديث خزنة الحانة ({item_name}) بمقدار `{quantity}` بنجاح.")
-
-# ==================== نظام الحداد (Blacksmith & Inventory - متاح للجميع) ====================
-@bot.tree.command(name="blacksmith", description="عرض خزنة الحداد بالجرد الحالي")
-async def blacksmith_cmd(interaction: discord.Interaction):
-    async with aiosqlite.connect(DB_NAME) as db:
-        async with db.execute("SELECT material_name, quantity FROM blacksmith_vault") as cursor:
-            rows = await cursor.fetchall()
-    embed = discord.Embed(title="⚒️ خزنة الحداد - GODFATHER FAMILY", color=discord.Color.dark_grey(), timestamp=get_makkah_now())
-    if not rows:
-        embed.description = "مخزون الحداد فارغ حالياً."
-    else:
-        for mat, qty in rows:
-            embed.add_field(name=mat, value=f"الكمية: `{qty:,}`", inline=True)
-    await interaction.response.send_message(embed=embed)
-
-@bot.tree.command(name="inventory", description="إضافة أو خصم (بالسالب) موارد خزنة الحداد")
-@app_commands.describe(material_name="اسم المورد", quantity="الكمية")
-async def inventory_cmd(interaction: discord.Interaction, material_name: str, quantity: int):
-    async with aiosqlite.connect(DB_NAME) as db:
-        await db.execute('''
-            INSERT INTO blacksmith_vault (material_name, quantity) VALUES (?, ?)
-            ON CONFLICT(material_name) DO UPDATE SET quantity = quantity + ?
-        ''', (material_name, quantity, quantity))
-        await db.commit()
-    await interaction.response.send_message(f"✅ تم تحديث موارد خزنة الحداد ({material_name}) بمقدار `{quantity}` بنجاح.")
-
-# ==================== أوامر الإدارة الحصرية (لـ Administrator فقط - تصفير وحذف عناصر) ====================
-@bot.tree.command(name="remove_item", description="حذف عنصر معين نهائياً من خزنة محددة (للأدمن فقط)")
-@app_commands.choices(vault_type=[
-    app_commands.Choice(name="البقالة", value="store"),
-    app_commands.Choice(name="محل الأسلحة", value="weapons"),
-    app_commands.Choice(name="الحانة", value="bar"),
-    app_commands.Choice(name="الحداد", value="blacksmith")
-])
-@app_commands.describe(vault_type="اختر الخزنة", item_name="اسم العنصر المراد حذفه نهائياً")
-@app_commands.checks.has_permissions(administrator=True)
-async def remove_item(interaction: discord.Interaction, vault_type: str, item_name: str):
-    table_map = {
-        "store": "store_vault",
-        "weapons": "weapons_vault",
-        "bar": "bar_vault",
-        "blacksmith": "blacksmith_vault"
-    }
-    column_map = {
-        "store": "item_name",
-        "weapons": "item_name",
-        "bar": "item_name",
-        "blacksmith": "material_name"
-    }
-    
-    table = table_map.get(vault_type)
-    col = column_map.get(vault_type)
-
-    async with aiosqlite.connect(DB_NAME) as db:
-        cursor = await db.execute(f"DELETE FROM {table} WHERE {col} = ?", (item_name,))
-        await db.commit()
-        if cursor.rowcount == 0:
-            await interaction.response.send_message(f"❌ العنصر `{item_name}` غير موجود في الخزنة المحددة.", ephemeral=True)
-            return
-
-    await interaction.response.send_message(f"🗑️ تم حذف العنصر `{item_name}` من الخزنة بنجاح.")
-
-@bot.tree.command(name="reset_inv", description="تصفير ومسح جرد خزنة معينة بالكامل (للأدمن فقط)")
-@app_commands.choices(vault_type=[
-    app_commands.Choice(name="البقالة", value="store"),
-    app_commands.Choice(name="محل الأسلحة", value="weapons"),
-    app_commands.Choice(name="الحانة", value="bar"),
-    app_commands.Choice(name="الحداد", value="blacksmith")
-])
-@app_commands.describe(vault_type="اختر الخزنة المراد تصفيرها")
-@app_commands.checks.has_permissions(administrator=True)
-async def reset_inv(interaction: discord.Interaction, vault_type: str):
-    async with aiosqlite.connect(DB_NAME) as db:
-        if vault_type == "store":
-            await db.execute("DELETE FROM store_vault")
-        elif vault_type == "weapons":
-            await db.execute("DELETE FROM weapons_vault")
-        elif vault_type == "bar":
-            await db.execute("DELETE FROM bar_vault")
-        elif vault_type == "blacksmith":
-            await db.execute("DELETE FROM blacksmith_vault")
-        await db.commit()
-        
-    await interaction.response.send_message(f"⚠️ تم تصفير ومسح جرد (`{vault_type}`) بالكامل بنجاح.")
 
 if __name__ == "__main__":
     TOKEN = os.environ.get("DISCORD_TOKEN")
