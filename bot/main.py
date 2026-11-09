@@ -22,28 +22,28 @@ def format_makkah_time(dt_obj):
 
 DB_NAME = "godfather_jobs.db"
 
-# ==================== إعدادات الحزم (العدد الإجمالي والنوع والألوان) ====================
+# ==================== إعدادات الحزم (العدد الإجمالي والنوع وأكواد الألوان) ====================
 PACKAGES_DATA = {
     # الحزم المحدودة
-    "CLASSIC": {"type": "limited", "color_hex": 0x992d22, "color_str": "992d22", "total": 5},
-    "FULMINE": {"type": "limited", "color_hex": 0x240b7a, "color_str": "240b7a", "total": 8},
-    "RED FLAME": {"type": "limited", "color_hex": 0xff0000, "color_str": "ff0000", "total": 1},
-    "CLAWS 🐯": {"type": "limited", "color_hex": 0xc27c0e, "color_str": "c27c0e", "total": 1},
-    "PREMIUM": {"type": "limited", "color_hex": 0xcda609, "color_str": "cda609", "total": 8},
-    "Elite": {"type": "limited", "color_hex": 0xa6834b, "color_str": "a6834b", "total": 1},
+    "CLASSIC": {"type": "limited", "color_str": "992d22", "total": 5},
+    "FULMINE": {"type": "limited", "color_str": "240b7a", "total": 8},
+    "RED FLAME": {"type": "limited", "color_str": "ff0000", "total": 1},
+    "CLAWS 🐯": {"type": "limited", "color_str": "c27c0e", "total": 1},
+    "PREMIUM": {"type": "limited", "color_str": "cda609", "total": 8},
+    "Elite": {"type": "limited", "color_str": "a6834b", "total": 1},
     
     # الحزم العادية
-    "SKY": {"type": "normal", "color_hex": 0x64b0e3, "color_str": "64b0e3", "total": 1},
-    "WOLF KING": {"type": "normal", "color_hex": 0x1100fe, "color_str": "1100fe", "total": 1},
-    "PLUM": {"type": "normal", "color_hex": 0x71368a, "color_str": "71368a", "total": 2},
-    "ROYAL PINK": {"type": "normal", "color_hex": 0xc852bc, "color_str": "c852bc", "total": 1},
-    "ROYAL GRAY": {"type": "normal", "color_hex": 0xf7f5f5, "color_str": "f7f5f5", "total": 8},
-    "BRIGHT ROSES": {"type": "normal", "color_hex": 0xad1457, "color_str": "ad1457", "total": 2},
-    "Venom": {"type": "normal", "color_hex": 0x073403, "color_str": "073403", "total": 2},
-    "GREEN FLAG": {"type": "normal", "color_hex": 0x1f8b4c, "color_str": "1f8b4c", "total": 6},
-    "Viper": {"type": "normal", "color_hex": 0x3e4020, "color_str": "3e4020", "total": 2},
-    "BlackBlood": {"type": "normal", "color_hex": 0x010101, "color_str": "010101", "total": 2},
-    "BLUE FANG": {"type": "normal", "color_hex": 0x2b3eea, "color_str": "2b3eea", "total": 1}
+    "SKY": {"type": "normal", "color_str": "64b0e3", "total": 1},
+    "WOLF KING": {"type": "normal", "color_str": "1100fe", "total": 1},
+    "PLUM": {"type": "normal", "color_str": "71368a", "total": 2},
+    "ROYAL PINK": {"type": "normal", "color_str": "c852bc", "total": 1},
+    "ROYAL GRAY": {"type": "normal", "color_str": "f7f5f5", "total": 8},
+    "BRIGHT ROSES": {"type": "normal", "color_str": "ad1457", "total": 2},
+    "Venom": {"type": "normal", "color_str": "073403", "total": 2},
+    "GREEN FLAG": {"type": "normal", "color_str": "1f8b4c", "total": 6},
+    "Viper": {"type": "normal", "color_str": "3e4020", "total": 2},
+    "BlackBlood": {"type": "normal", "color_str": "010101", "total": 2},
+    "BLUE FANG": {"type": "normal", "color_str": "2b3eea", "total": 1}
 }
 
 # ==================== الثوابت والمعرفات المطلوبة ====================
@@ -186,7 +186,7 @@ class AddSerialPackageSelectView(discord.ui.View):
         options=[
             discord.SelectOption(
                 label=pkg_name,
-                description=f"النوع: {'محدودة' | 'عادية'} | الإجمالي: {info['total']} نسخ",
+                description=f"النوع: {'محدودة' if info['type'] == 'limited' else 'عادية'} | إجمالي النسخ: {info['total']}",
                 emoji="🌟" if info['type'] == 'limited' else "🔹",
                 value=pkg_name
             ) for pkg_name, info in PACKAGES_DATA.items()
@@ -200,50 +200,51 @@ class AddSerialPackageSelectView(discord.ui.View):
 async def add_serial_cmd(interaction: discord.Interaction):
     await interaction.response.send_message("📦 **اختر الحزمة المراد إضافة السيريال والنسخة لها:**", view=AddSerialPackageSelectView(), ephemeral=True)
 
-# ==================== نظام استعراض الحزم مع الألوان وإحصائيات المسجل وغير المسجل ====================
+# ==================== نظام استعراض الحزم مع مقارنة الإجمالي والمسجل وغير المسجل ====================
 class PackagesSelect(discord.ui.Select):
     def __init__(self):
         options = [
-            discord.SelectOption(label="الحزم المحدودة (Limited Packages)", description="عرض الحزم المحدودة، ألوانها، وإحصائيات سيريالاتها", emoji="🌟", value="limited_packages"),
-            discord.SelectOption(label="الحزم العادية (Normal Packages)", description="عرض الحزم العادية، ألوانها، وإحصائيات سيريالاتها", emoji="🔹", value="normal_packages")
+            discord.SelectOption(label="الحزم المحدودة (Limited Packages)", description="عرض الحزم المحدودة، ألوانها، والنسخ المسجلة وغير المسجلة", emoji="🌟", value="limited_packages"),
+            discord.SelectOption(label="الحزم العادية (Normal Packages)", description="عرض الحزم العادية، ألوانها، والنسخ المسجلة وغير المسجلة", emoji="🔹", value="normal_packages")
         ]
         super().__init__(placeholder="اختر قسم الحزم للاستعراض...", min_values=1, max_values=1, options=options)
 
     async def callback(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         target_type = "limited" if self.values[0] == "limited_packages" else "normal"
-        title_text = "🌟 قائمة الحزم المحدودة وإحصائيات السيريالات" if target_type == "limited" else "🔹 قائمة الحزم العادية وإحصائيات السيريالات"
+        title_text = "🌟 قائمة الحزم المحدودة (النسخ المسجلة وغير المسجلة)" if target_type == "limited" else "🔹 قائمة الحزم العادية (النسخ المسجلة وغير المسجلة)"
         color_theme = discord.Color.gold() if target_type == "limited" else discord.Color.blue()
 
         async with aiosqlite.connect(DB_NAME) as db:
             async with db.execute("SELECT rowid, package_name, version_number, serial_number FROM package_serials WHERE package_type = ?", (target_type,)) as cursor:
                 serials_rows = await cursor.fetchall()
 
-        # تجميع السيريالات وحساب المسجل لكل حزمة
+        # تجميع السيريالات المسجلة لكل حزمة
         serials_by_pkg = {}
-        registered_counts = {}
         for rowid, p_name, ver, serial in serials_rows:
             if p_name not in serials_by_pkg:
                 serials_by_pkg[p_name] = []
-                registered_counts[p_name] = 0
             serials_by_pkg[p_name].append(f"🆔 {rowid} | النسخة: `{ver}` ➔ السيريال: `{serial}`")
-            registered_counts[p_name] += 1
 
         embed = discord.Embed(title=title_text, color=color_theme, timestamp=get_makkah_now())
 
         for pkg_name, info in PACKAGES_DATA.items():
             if info["type"] == target_type:
                 total_copies = info["total"]
-                registered_num = registered_counts.get(pkg_name, 0)
-                unregistered_num = max(0, total_copies - registered_num)
-
                 pkg_serials = serials_by_pkg.get(pkg_name, [])
-                serials_text = "\n".join(pkg_serials) if pkg_serials else "لا توجد نسخ مسجلة حالياً."
+                registered_count = len(pkg_serials)
+                unregistered_count = max(0, total_copies - registered_count)
 
-                stats_line = f"📊 **الإحصائية:** مسجل: `{registered_num}` | غير مسجل: `{unregistered_num}` من إجمالي `{total_copies}`"
                 color_line = f"🎨 **لون الحزمة:** `{info['color_str']}`"
+                count_line = f"📊 **العدد:** إجمالي النسخ: `{total_copies}` | مسجلة: `{registered_count}` | غير مسجلة: `{unregistered_count}`"
 
-                field_value = f"{color_line}\n{stats_line}\n\n**النسخ المسجلة:**\n{serials_text}"
+                if pkg_serials:
+                    serials_text = "\n".join(pkg_serials)
+                    registered_section = f"✅ **النسخ المسجلة:**\n{serials_text}"
+                else:
+                    registered_section = "✅ **النسخ المسجلة:** لا توجد نسخ مسجلة بعد."
+
+                field_value = f"{color_line}\n{count_line}\n\n{registered_section}"
 
                 embed.add_field(
                     name=f"{'🌟' if target_type == 'limited' else '🔹'} {pkg_name}",
@@ -258,11 +259,11 @@ class PackagesView(discord.ui.View):
         super().__init__(timeout=180)
         self.add_item(PackagesSelect())
 
-@bot.tree.command(name="packages", description="عرض قوائم الحزم مع الألوان وإحصائيات السيريالات المسجلة وغير المسجلة")
+@bot.tree.command(name="packages", description="عرض قوائم الحزم مع الألوان وإحصائيات النسخ المسجلة وغير المسجلة")
 async def packages_cmd(interaction: discord.Interaction):
     embed = discord.Embed(
         title="📦 نظام إدارة واستعراض الحزم والنسخ",
-        description="اختر القسم من القائمة المنسدلة بالأسفل لعرض الحزم، الألوان الملونة، وعدد النسخ المسجلة وغير المسجلة.",
+        description="اختر القسم من القائمة المنسدلة بالأسفل لعرض الحزم، ألوانها، وإحصائيات النسخ المسجلة وغير المسجلة.",
         color=discord.Color.dark_theme(),
         timestamp=get_makkah_now()
     )
