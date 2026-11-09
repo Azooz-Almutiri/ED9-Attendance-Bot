@@ -27,7 +27,7 @@ BROADCAST_ROLE_ID = 1550542997010251927      # رتبة استلام البرو�
 WELCOME_ROLE_ID = 1550543013317447680        # الرول الذي يعطى للعضو عند دخوله
 RULES_CHANNEL_ID = 1550543164723564636       # روم القوانين
 APPLY_CHANNEL_ID = 1550543173300781116       # روم طلب التقديم
-WELCOME_CHANNEL_ID = 1550543159321427978    # روم الترحيب
+WELCOME_CHANNEL_ID = 1550543159321427978     # روم الترحيب
 ATTENDANCE_CHANNEL_ID = 1552244246764064818  # روم تحضير RedM
 
 CHECK_INTERVAL = 3600         # التحقق كل ساعة
@@ -73,6 +73,16 @@ async def init_db():
                 total_points INTEGER DEFAULT 0
             )
         ''')
+        await db.execute('''
+            CREATE TABLE IF NOT EXISTS package_serials (
+                rowid INTEGER PRIMARY KEY AUTOINCREMENT,
+                package_name TEXT,
+                version_number TEXT,
+                serial_number TEXT,
+                added_by TEXT,
+                added_at TEXT
+            )
+        ''')
         await db.commit()
 
 # ==================== سيرفر الويب للبوت ====================
@@ -107,6 +117,71 @@ async def on_ready():
         print(f"✅ Synced {len(synced)} slash commands.")
     except Exception as e:
         print(f"❌ Failed to sync: {e}")
+
+# ==================== نظام السيريال نمبر والنسخ للحزم ====================
+class AddSerialModal(discord.ui.Modal, title="تسجيل نسخة وسيريال حزمة 📦"):
+    package_name = discord.ui.TextInput(label="اسم الحزمة", placeholder="مثال: CLASSIC أو FULMINE...", required=True)
+    version_number = discord.ui.TextInput(label="رقم/اسم النسخة", placeholder="مثال: V1.0 أو النسخة 2...", required=True)
+    serial_number = discord.ui.TextInput(label="السيريال نمبر (Serial Number)", placeholder="أدخل رقم السيريال هنا...", required=True)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        now_str = get_makkah_now().isoformat()
+
+        async with aiosqlite.connect(DB_NAME) as db:
+            await db.execute(
+                "INSERT INTO package_serials (package_name, version_number, serial_number, added_by, added_at) VALUES (?, ?, ?, ?, ?)",
+                (self.package_name.value.strip().upper(), self.version_number.value.strip(), self.serial_number.value.strip(), str(interaction.user), now_str)
+            )
+            await db.commit()
+
+        embed = discord.Embed(
+            title="✅ تم تسجيل سيريال الحزمة بنجاح",
+            color=discord.Color.green(),
+            timestamp=get_makkah_now()
+        )
+        embed.add_field(name="اسم الحزمة", value=f"`{self.package_name.value.upper()}`", inline=True)
+        embed.add_field(name="النسخة", value=f"`{self.version_number.value}`", inline=True)
+        embed.add_field(name="السيريال نمبر", value=f"`{self.serial_number.value}`", inline=False)
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
+@bot.tree.command(name="add_serial", description="إضافة سيريال ونسخة حزمة جديدة إلى النظام")
+async def add_serial_cmd(interaction: discord.Interaction):
+    await interaction.response.send_modal(AddSerialModal())
+
+@bot.tree.command(name="serials", description="عرض سيريالات ونسخ حزمة معينة")
+async def serials_cmd(interaction: discord.Interaction, package_name: str):
+    pkg_name = package_name.strip().upper()
+    async with aiosqlite.connect(DB_NAME) as db:
+        async with db.execute("SELECT rowid, version_number, serial_number, added_at FROM package_serials WHERE package_name = ?", (pkg_name,)) as cursor:
+            rows = await cursor.fetchall()
+
+    embed = discord.Embed(
+        title=f"📦 سيريالات ونُسخ حزمة: {pkg_name}",
+        color=discord.Color.gold(),
+        timestamp=get_makkah_now()
+    )
+    if not rows:
+        embed.description = f"❌ لا توجد سيريالات أو نسخ مسجلة للحزمة `{pkg_name}` حالياً."
+    else:
+        for rowid, ver, serial, added_at in rows:
+            embed.add_field(
+                name=f"🆔 ID: {rowid} | النسخة: {ver}",
+                value=f"🔑 السيريال: `{serial}`",
+                inline=False
+            )
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+@bot.tree.command(name="remove_serial", description="حذف سيريال أو نسخة حزمة برقم الـ ID (للأدمن فقط)")
+@app_commands.checks.has_permissions(administrator=True)
+async def remove_serial_cmd(interaction: discord.Interaction, row_id: int):
+    async with aiosqlite.connect(DB_NAME) as db:
+        cursor = await db.execute("DELETE FROM package_serials WHERE rowid = ?", (row_id,))
+        await db.commit()
+        if cursor.rowcount == 0:
+            await interaction.response.send_message(f"❌ لم يتم العثور على سيريال بهذا الـ ID ({row_id}).", ephemeral=True)
+            return
+    await interaction.response.send_message(f"🗑️ تم حذف السيريال (ID: {row_id}) بنجاح.", ephemeral=True)
 
 # ==================== نظام الترحيب التلقائي بالأعضاء الجدد ====================
 recent_joined = set()
@@ -346,6 +421,78 @@ async def points_cmd(interaction: discord.Interaction, member: discord.Member = 
         timestamp=get_makkah_now()
     )
     await interaction.response.send_message(embed=embed)
+
+# ==================== نظام قائمة الحزم (القائمة المنسدلة الجديدة) ====================
+class PackagesSelect(discord.ui.Select):
+    def __init__(self):
+        options = [
+            discord.SelectOption(label="الحزم المحدودة (Limited Packages)", description="عرض قائمة الحزم المحدودة وأكواد الألوان", emoji="🌟", value="limited_packages"),
+            discord.SelectOption(label="الحزم العادية (Normal Packages)", description="عرض قائمة الحزم العادية وأكواد الألوان", emoji="🔹", value="normal_packages")
+        ]
+        super().__init__(placeholder="اختر نوع الحزم للاستعراض...", min_values=1, max_values=1, options=options)
+
+    async def callback(self, interaction: discord.Interaction):
+        if self.values[0] == "limited_packages":
+            embed = discord.Embed(
+                title="🌟 قائمة الحزم المحدودة",
+                description="إليك تفاصيل الحزم المحدودة وأكواد ألوانها:",
+                color=discord.Color.gold(),
+                timestamp=get_makkah_now()
+            )
+            embed.add_field(
+                name="الحزم المحدودة",
+                value=(
+                    "• **CLASSIC** ➔ `992d22`\n"
+                    "• **FULMINE** ➔ `240b7a`\n"
+                    "• **RED FLAME** ➔ `ff0000`\n"
+                    "• **CLAWS 🐯** ➔ `c27c0e`\n"
+                    "• **PREMIUM-9** ➔ `cda609`\n"
+                    "• **@Elite** ➔ `a6834b`"
+                ),
+                inline=False
+            )
+            await interaction.response.edit_message(embed=embed, view=self.view)
+
+        elif self.values[0] == "normal_packages":
+            embed = discord.Embed(
+                title="🔹 قائمة الحزم العادية",
+                description="إليك تفاصيل الحزم العادية وأكواد ألوانها:",
+                color=discord.Color.blue(),
+                timestamp=get_makkah_now()
+            )
+            embed.add_field(
+                name="الحزم العادية",
+                value=(
+                    "• **@SKY** ➔ `64b0e3`\n"
+                    "• **WOLF KING 🐺** ➔ `1100fe`\n"
+                    "• **PLUM** ➔ `71368a`\n"
+                    "• **ROYAL PINK** ➔ `c852bc`\n"
+                    "• **ROYAL GRAY** ➔ `f7f5f5`\n"
+                    "• **BRIGHT ROSES** ➔ `ad1457`\n"
+                    "• **Venom** ➔ `073403`\n"
+                    "• **GREEN FLAG** ➔ `1f8b4c`\n"
+                    "• **Viper** ➔ `3e4020`\n"
+                    "• **BlackBlood** ➔ `010101`\n"
+                    "• **BLUE FANG** ➔ `2b3eea`"
+                ),
+                inline=False
+            )
+            await interaction.response.edit_message(embed=embed, view=self.view)
+
+class PackagesView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=180)
+        self.add_item(PackagesSelect())
+
+@bot.tree.command(name="packages", description="عرض قوائم الحزم المحدودة والعادية المنسدلة")
+async def packages_cmd(interaction: discord.Interaction):
+    embed = discord.Embed(
+        title="📦 نظام إدارة واستعراض الحزم",
+        description="يرجى اختيار القسم المطلوب من القائمة المنسدلة بالأسفل لعرض تفاصيل الحزم وأكواد الألوان.",
+        color=discord.Color.dark_theme(),
+        timestamp=get_makkah_now()
+    )
+    await interaction.response.send_message(embed=embed, view=PackagesView(), ephemeral=True)
 
 # ==================== نظام تزاوج الخيول المطور (خيارات منسدلة سهلة) ====================
 HORSE_TYPES = [
