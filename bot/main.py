@@ -22,16 +22,40 @@ def format_makkah_time(dt_obj):
 
 DB_NAME = "godfather_jobs.db"
 
-# ==================== الثوابت والمعرفات المطلوبة ====================
-BROADCAST_ROLE_ID = 1550542997010251927      # رتبة استلام البرودكاست
-WELCOME_ROLE_ID = 1550543013317447680        # الرول الذي يعطى للعضو عند دخوله
-RULES_CHANNEL_ID = 1550543164723564636       # روم القوانين
-APPLY_CHANNEL_ID = 1550543173300781116       # روم طلب التقديم
-WELCOME_CHANNEL_ID = 1550543159321427978     # روم الترحيب
-ATTENDANCE_CHANNEL_ID = 1552244246764064818  # روم تحضير RedM
+# ==================== إعدادات الحزم (العدد الإجمالي والنوع والألوان) ====================
+PACKAGES_DATA = {
+    # الحزم المحدودة
+    "CLASSIC": {"type": "limited", "color_hex": 0x992d22, "color_str": "992d22", "total": 5},
+    "FULMINE": {"type": "limited", "color_hex": 0x240b7a, "color_str": "240b7a", "total": 8},
+    "RED FLAME": {"type": "limited", "color_hex": 0xff0000, "color_str": "ff0000", "total": 1},
+    "CLAWS 🐯": {"type": "limited", "color_hex": 0xc27c0e, "color_str": "c27c0e", "total": 1},
+    "PREMIUM": {"type": "limited", "color_hex": 0xcda609, "color_str": "cda609", "total": 8},
+    "Elite": {"type": "limited", "color_hex": 0xa6834b, "color_str": "a6834b", "total": 1},
+    
+    # الحزم العادية
+    "SKY": {"type": "normal", "color_hex": 0x64b0e3, "color_str": "64b0e3", "total": 1},
+    "WOLF KING": {"type": "normal", "color_hex": 0x1100fe, "color_str": "1100fe", "total": 1},
+    "PLUM": {"type": "normal", "color_hex": 0x71368a, "color_str": "71368a", "total": 2},
+    "ROYAL PINK": {"type": "normal", "color_hex": 0xc852bc, "color_str": "c852bc", "total": 1},
+    "ROYAL GRAY": {"type": "normal", "color_hex": 0xf7f5f5, "color_str": "f7f5f5", "total": 8},
+    "BRIGHT ROSES": {"type": "normal", "color_hex": 0xad1457, "color_str": "ad1457", "total": 2},
+    "Venom": {"type": "normal", "color_hex": 0x073403, "color_str": "073403", "total": 2},
+    "GREEN FLAG": {"type": "normal", "color_hex": 0x1f8b4c, "color_str": "1f8b4c", "total": 6},
+    "Viper": {"type": "normal", "color_hex": 0x3e4020, "color_str": "3e4020", "total": 2},
+    "BlackBlood": {"type": "normal", "color_hex": 0x010101, "color_str": "010101", "total": 2},
+    "BLUE FANG": {"type": "normal", "color_hex": 0x2b3eea, "color_str": "2b3eea", "total": 1}
+}
 
-CHECK_INTERVAL = 3600         # التحقق كل ساعة
-CONFIRM_TIMEOUT = 600         # 10 دقائق مهلة للرد
+# ==================== الثوابت والمعرفات المطلوبة ====================
+BROADCAST_ROLE_ID = 1550542997010251927      
+WELCOME_ROLE_ID = 1550543013317447680        
+RULES_CHANNEL_ID = 1550543164723564636       
+APPLY_CHANNEL_ID = 1550543173300781116       
+WELCOME_CHANNEL_ID = 1550543159321427978     
+ATTENDANCE_CHANNEL_ID = 1552244246764064818  
+
+CHECK_INTERVAL = 3600         
+CONFIRM_TIMEOUT = 600         
 
 periodic_check_tasks = {}
 
@@ -77,6 +101,7 @@ async def init_db():
             CREATE TABLE IF NOT EXISTS package_serials (
                 rowid INTEGER PRIMARY KEY AUTOINCREMENT,
                 package_name TEXT,
+                package_type TEXT,
                 version_number TEXT,
                 serial_number TEXT,
                 added_by TEXT,
@@ -118,59 +143,130 @@ async def on_ready():
     except Exception as e:
         print(f"❌ Failed to sync: {e}")
 
-# ==================== نظام السيريال نمبر والنسخ للحزم ====================
-class AddSerialModal(discord.ui.Modal, title="تسجيل نسخة وسيريال حزمة 📦"):
-    package_name = discord.ui.TextInput(label="اسم الحزمة", placeholder="مثال: CLASSIC أو FULMINE...", required=True)
-    version_number = discord.ui.TextInput(label="رقم/اسم النسخة", placeholder="مثال: V1.0 أو النسخة 2...", required=True)
+# ==================== نظام إضافة السيريال باختيار الحزمة ====================
+class AddSerialModalDetails(discord.ui.Modal):
+    def __init__(self, selected_package: str):
+        self.selected_package = selected_package
+        super().__init__(title=f"إضافة سيريال للحزمة: {selected_package}")
+
+    version_number = discord.ui.TextInput(label="اسم / رقم النسخة", placeholder="مثال: النسخة الأولى أو V1...", required=True)
     serial_number = discord.ui.TextInput(label="السيريال نمبر (Serial Number)", placeholder="أدخل رقم السيريال هنا...", required=True)
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         now_str = get_makkah_now().isoformat()
+        pkg_info = PACKAGES_DATA.get(self.selected_package, {"type": "normal"})
+        pkg_type = pkg_info["type"]
 
         async with aiosqlite.connect(DB_NAME) as db:
             await db.execute(
-                "INSERT INTO package_serials (package_name, version_number, serial_number, added_by, added_at) VALUES (?, ?, ?, ?, ?)",
-                (self.package_name.value.strip().upper(), self.version_number.value.strip(), self.serial_number.value.strip(), str(interaction.user), now_str)
+                "INSERT INTO package_serials (package_name, package_type, version_number, serial_number, added_by, added_at) VALUES (?, ?, ?, ?, ?, ?)",
+                (self.selected_package, pkg_type, self.version_number.value.strip(), self.serial_number.value.strip(), str(interaction.user), now_str)
             )
             await db.commit()
+
+        type_label = "🌟 محدودة" if pkg_type == "limited" else "🔹 عادية"
 
         embed = discord.Embed(
             title="✅ تم تسجيل سيريال الحزمة بنجاح",
             color=discord.Color.green(),
             timestamp=get_makkah_now()
         )
-        embed.add_field(name="اسم الحزمة", value=f"`{self.package_name.value.upper()}`", inline=True)
+        embed.add_field(name="الحزمة", value=f"`{self.selected_package}` ({type_label})", inline=True)
         embed.add_field(name="النسخة", value=f"`{self.version_number.value}`", inline=True)
         embed.add_field(name="السيريال نمبر", value=f"`{self.serial_number.value}`", inline=False)
         await interaction.followup.send(embed=embed, ephemeral=True)
 
-@bot.tree.command(name="add_serial", description="إضافة سيريال ونسخة حزمة جديدة إلى النظام")
+class AddSerialPackageSelectView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=180)
+
+    @discord.ui.select(
+        placeholder="اختر الحزمة لإضافة سيريال ونسخة لها...",
+        options=[
+            discord.SelectOption(
+                label=pkg_name,
+                description=f"النوع: {'محدودة' | 'عادية'} | الإجمالي: {info['total']} نسخ",
+                emoji="🌟" if info['type'] == 'limited' else "🔹",
+                value=pkg_name
+            ) for pkg_name, info in PACKAGES_DATA.items()
+        ]
+    )
+    async def select_package(self, interaction: discord.Interaction, select: discord.ui.Select):
+        selected_pkg = select.values[0]
+        await interaction.response.send_modal(AddSerialModalDetails(selected_pkg))
+
+@bot.tree.command(name="add_serial", description="إضافة سيريال ونسخة لحزمة عن طريق اختيارها من القائمة")
 async def add_serial_cmd(interaction: discord.Interaction):
-    await interaction.response.send_modal(AddSerialModal())
+    await interaction.response.send_message("📦 **اختر الحزمة المراد إضافة السيريال والنسخة لها:**", view=AddSerialPackageSelectView(), ephemeral=True)
 
-@bot.tree.command(name="serials", description="عرض سيريالات ونسخ حزمة معينة")
-async def serials_cmd(interaction: discord.Interaction, package_name: str):
-    pkg_name = package_name.strip().upper()
-    async with aiosqlite.connect(DB_NAME) as db:
-        async with db.execute("SELECT rowid, version_number, serial_number, added_at FROM package_serials WHERE package_name = ?", (pkg_name,)) as cursor:
-            rows = await cursor.fetchall()
+# ==================== نظام استعراض الحزم مع الألوان وإحصائيات المسجل وغير المسجل ====================
+class PackagesSelect(discord.ui.Select):
+    def __init__(self):
+        options = [
+            discord.SelectOption(label="الحزم المحدودة (Limited Packages)", description="عرض الحزم المحدودة، ألوانها، وإحصائيات سيريالاتها", emoji="🌟", value="limited_packages"),
+            discord.SelectOption(label="الحزم العادية (Normal Packages)", description="عرض الحزم العادية، ألوانها، وإحصائيات سيريالاتها", emoji="🔹", value="normal_packages")
+        ]
+        super().__init__(placeholder="اختر قسم الحزم للاستعراض...", min_values=1, max_values=1, options=options)
 
+    async def callback(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        target_type = "limited" if self.values[0] == "limited_packages" else "normal"
+        title_text = "🌟 قائمة الحزم المحدودة وإحصائيات السيريالات" if target_type == "limited" else "🔹 قائمة الحزم العادية وإحصائيات السيريالات"
+        color_theme = discord.Color.gold() if target_type == "limited" else discord.Color.blue()
+
+        async with aiosqlite.connect(DB_NAME) as db:
+            async with db.execute("SELECT rowid, package_name, version_number, serial_number FROM package_serials WHERE package_type = ?", (target_type,)) as cursor:
+                serials_rows = await cursor.fetchall()
+
+        # تجميع السيريالات وحساب المسجل لكل حزمة
+        serials_by_pkg = {}
+        registered_counts = {}
+        for rowid, p_name, ver, serial in serials_rows:
+            if p_name not in serials_by_pkg:
+                serials_by_pkg[p_name] = []
+                registered_counts[p_name] = 0
+            serials_by_pkg[p_name].append(f"🆔 {rowid} | النسخة: `{ver}` ➔ السيريال: `{serial}`")
+            registered_counts[p_name] += 1
+
+        embed = discord.Embed(title=title_text, color=color_theme, timestamp=get_makkah_now())
+
+        for pkg_name, info in PACKAGES_DATA.items():
+            if info["type"] == target_type:
+                total_copies = info["total"]
+                registered_num = registered_counts.get(pkg_name, 0)
+                unregistered_num = max(0, total_copies - registered_num)
+
+                pkg_serials = serials_by_pkg.get(pkg_name, [])
+                serials_text = "\n".join(pkg_serials) if pkg_serials else "لا توجد نسخ مسجلة حالياً."
+
+                stats_line = f"📊 **الإحصائية:** مسجل: `{registered_num}` | غير مسجل: `{unregistered_num}` من إجمالي `{total_copies}`"
+                color_line = f"🎨 **لون الحزمة:** `{info['color_str']}`"
+
+                field_value = f"{color_line}\n{stats_line}\n\n**النسخ المسجلة:**\n{serials_text}"
+
+                embed.add_field(
+                    name=f"{'🌟' if target_type == 'limited' else '🔹'} {pkg_name}",
+                    value=field_value,
+                    inline=False
+                )
+
+        await interaction.edit_original_response(embed=embed, view=self.view)
+
+class PackagesView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=180)
+        self.add_item(PackagesSelect())
+
+@bot.tree.command(name="packages", description="عرض قوائم الحزم مع الألوان وإحصائيات السيريالات المسجلة وغير المسجلة")
+async def packages_cmd(interaction: discord.Interaction):
     embed = discord.Embed(
-        title=f"📦 سيريالات ونُسخ حزمة: {pkg_name}",
-        color=discord.Color.gold(),
+        title="📦 نظام إدارة واستعراض الحزم والنسخ",
+        description="اختر القسم من القائمة المنسدلة بالأسفل لعرض الحزم، الألوان الملونة، وعدد النسخ المسجلة وغير المسجلة.",
+        color=discord.Color.dark_theme(),
         timestamp=get_makkah_now()
     )
-    if not rows:
-        embed.description = f"❌ لا توجد سيريالات أو نسخ مسجلة للحزمة `{pkg_name}` حالياً."
-    else:
-        for rowid, ver, serial, added_at in rows:
-            embed.add_field(
-                name=f"🆔 ID: {rowid} | النسخة: {ver}",
-                value=f"🔑 السيريال: `{serial}`",
-                inline=False
-            )
-    await interaction.response.send_message(embed=embed, ephemeral=True)
+    await interaction.response.send_message(embed=embed, view=PackagesView(), ephemeral=True)
 
 @bot.tree.command(name="remove_serial", description="حذف سيريال أو نسخة حزمة برقم الـ ID (للأدمن فقط)")
 @app_commands.checks.has_permissions(administrator=True)
@@ -183,7 +279,7 @@ async def remove_serial_cmd(interaction: discord.Interaction, row_id: int):
             return
     await interaction.response.send_message(f"🗑️ تم حذف السيريال (ID: {row_id}) بنجاح.", ephemeral=True)
 
-# ==================== نظام الترحيب التلقائي بالأعضاء الجدد ====================
+# ==================== باقي الأوامر (الترحيب، البرودكاست، التحضير، الخيول) ====================
 recent_joined = set()
 
 @bot.event
@@ -204,7 +300,6 @@ async def on_member_join(member: discord.Member):
     if channel:
         apply_channel = member.guild.get_channel(APPLY_CHANNEL_ID)
         rules_channel = member.guild.get_channel(RULES_CHANNEL_ID)
-        
         apply_mention = apply_channel.mention if apply_channel else "#طلب-التقديم"
         rules_mention = rules_channel.mention if rules_channel else "#القوانين"
 
@@ -212,7 +307,7 @@ async def on_member_join(member: discord.Member):
             title="👋 حياك الله في عائلة القودفاذرز!",
             description=f"مرحباً بك {member.mention} نورت السيرفر.\n\n"
                         f"📜 نرجو منك قراءة قوانين السيرفر بتمعن في {rules_mention}.\n"
-                        f"🤝 إذا كنت تبي تنضم لعائلتنا وتقدم طلبك، توجه وحط طلبك في {apply_mention}.",
+                        f"🤝 إذا كنت تبي تنضم لعائلتنا وتقدم طلبك، توجه إلى {apply_mention}.",
             color=discord.Color.gold(),
             timestamp=get_makkah_now()
         )
@@ -223,7 +318,6 @@ async def remove_recent(member_id):
     await asyncio.sleep(10)
     recent_joined.discard(member_id)
 
-# ==================== أمر البرودكاست المخصص ====================
 @bot.command(name="bc")
 async def broadcast_cmd(ctx, *, message_content: str = None):
     try:
@@ -232,15 +326,15 @@ async def broadcast_cmd(ctx, *, message_content: str = None):
         pass
 
     if not message_content:
-        await ctx.send("❌ يرجى كتابة الرسالة المراد إرسالها بعد الأمر!\nمثال: `!bc السلام عليكم حياكم الله`", delete_after=6)
+        await ctx.send("❌ يرجى كتابة الرسالة بعد الأمر!", delete_after=6)
         return
 
     target_role = ctx.guild.get_role(BROADCAST_ROLE_ID)
     if not target_role:
-        await ctx.send("❌ عذراً، رتبة استقبال البرودكاست المحددة غير موجودة في السيرفر!", delete_after=6)
+        await ctx.send("❌ رتبة البرودكاست غير موجودة!", delete_after=6)
         return
 
-    status_msg = await ctx.send(f"⏳ جاري إرسال البرودكاست لأصحاب رتبة ({target_role.name})...")
+    status_msg = await ctx.send(f"⏳ جاري إرسال البرودكاست...")
     sent, failed = 0, 0
 
     for member in target_role.members:
@@ -253,9 +347,8 @@ async def broadcast_cmd(ctx, *, message_content: str = None):
         except Exception:
             failed += 1
 
-    await status_msg.edit(content=f"✅ تم الانتهاء من إرسال البرودكاست!\n📤 تم الإرسال لـ {sent} عضو\n❌ تعذر الإرسال لـ {failed} عضو (خاص مقفل)")
+    await status_msg.edit(content=f"✅ تم الانتهاء! تم الإرسال لـ {sent} عضو.")
 
-# ==================== نظام تحضير RedM التفاعلي والنقاط ====================
 class ConfirmRedMView(discord.ui.View):
     def __init__(self, user_id: int):
         super().__init__(timeout=CONFIRM_TIMEOUT)
@@ -265,9 +358,8 @@ class ConfirmRedMView(discord.ui.View):
     @discord.ui.button(label="تأكيد التواجد 🟢", style=discord.ButtonStyle.green, custom_id="confirm_redm_presence")
     async def confirm_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.user_id:
-            await interaction.response.send_message("❌ هذا التنبيه ليس مخصصاً لك!", ephemeral=True)
+            await interaction.response.send_message("❌ هذا التنبيه ليس لك!", ephemeral=True)
             return
-
         self.confirmed = True
         button.disabled = True
         button.label = "تم التأكيد ✅"
@@ -285,33 +377,22 @@ async def start_redm_periodic_check(bot_client, member: discord.Member):
             async with aiosqlite.connect(DB_NAME) as db:
                 async with db.execute("SELECT rowid, start_time FROM redm_attendance WHERE user_id = ? AND end_time IS NULL", (member.id,)) as cursor:
                     active_session = await cursor.fetchone()
-
             if not active_session:
                 break
-
             channel = bot_client.get_channel(ATTENDANCE_CHANNEL_ID)
             if not channel:
                 break
-
             view = ConfirmRedMView(member.id)
             try:
-                msg = await channel.send(
-                    f"⚠️ {member.mention} **تأكيد حضور دوري:**\n"
-                    "لقد مرت ساعة على تواجدك في التحضير. هل ما زلت متصلاً؟\n"
-                    "يرجى الضغط على الزر أدناه خلال **10 دقائق** لتأكيد تواجدك، وإلا سيتم تسجيل خروجك تلقائياً.",
-                    view=view
-                )
+                await channel.send(f"⚠️ {member.mention} **تأكيد حضور دوري:** يرجى الضغط على الزر خلال 10 دقائق.", view=view)
             except Exception:
                 pass
-
             await view.wait()
-
             if not view.confirmed:
                 now = get_makkah_now()
                 row_id, start_str = active_session
                 duration = max(0, int((now - datetime.fromisoformat(str(start_str))).total_seconds() // 60))
                 earned_points = duration // 60
-
                 async with aiosqlite.connect(DB_NAME) as db:
                     await db.execute("UPDATE redm_attendance SET end_time = ?, duration_minutes = ?, points_earned = ? WHERE rowid = ?", 
                                      (now.isoformat(), duration, earned_points, row_id))
@@ -336,288 +417,131 @@ class RedMAttendanceView(discord.ui.View):
     async def start_redm(self, interaction: discord.Interaction, button: discord.ui.Button):
         user = interaction.user
         now = get_makkah_now()
-
         async with aiosqlite.connect(DB_NAME) as db:
             async with db.execute("SELECT start_time FROM redm_attendance WHERE user_id = ? AND end_time IS NULL", (user.id,)) as cursor:
                 active_session = await cursor.fetchone()
-
             if active_session:
-                await interaction.response.send_message("❌ أنت مسجل دخول في RedM بالفعل!", ephemeral=True)
+                await interaction.response.send_message("❌ أنت مسجل دخول بالفعل!", ephemeral=True)
                 return
-
             await db.execute("INSERT INTO redm_attendance (user_id, user_name, start_time) VALUES (?, ?, ?)",
                              (user.id, user.display_name, now.isoformat()))
             await db.commit()
-
         if user.id in periodic_check_tasks:
             periodic_check_tasks[user.id].cancel()
-
         periodic_check_tasks[user.id] = asyncio.create_task(start_redm_periodic_check(self.bot, user))
-        await interaction.response.send_message(f"✅ تم تسجيل دخولك في RedM بنجاح الساعة `{format_makkah_time(now)}`.", ephemeral=True)
+        await interaction.response.send_message(f"✅ تم تسجيل دخولك الساعة `{format_makkah_time(now)}`.", ephemeral=True)
 
     @discord.ui.button(label="خروج RedM", style=discord.ButtonStyle.red, custom_id="redm_end_btn")
     async def end_redm(self, interaction: discord.Interaction, button: discord.ui.Button):
         user = interaction.user
         now = get_makkah_now()
-
         async with aiosqlite.connect(DB_NAME) as db:
             async with db.execute("SELECT rowid, start_time FROM redm_attendance WHERE user_id = ? AND end_time IS NULL", (user.id,)) as cursor:
                 active_session = await cursor.fetchone()
-
             if not active_session:
-                await interaction.response.send_message("❌ أنت غير مسجل دخول في RedM حالياً!", ephemeral=True)
+                await interaction.response.send_message("❌ أنت غير مسجل دخول حالياً!", ephemeral=True)
                 return
-
             row_id, start_str = active_session
             duration = max(0, int((now - datetime.fromisoformat(str(start_str))).total_seconds() // 60))
             earned_points = duration // 60
-
             await db.execute("UPDATE redm_attendance SET end_time = ?, duration_minutes = ?, points_earned = ? WHERE rowid = ?", 
                              (now.isoformat(), duration, earned_points, row_id))
-            
             if earned_points > 0:
                 await db.execute('''
                     INSERT INTO member_points (user_id, user_name, total_points) VALUES (?, ?, ?)
                     ON CONFLICT(user_id) DO UPDATE SET total_points = total_points + ?, user_name = ?
                 ''', (user.id, user.display_name, earned_points, earned_points, user.display_name))
-            
             await db.commit()
-
         if user.id in periodic_check_tasks:
             periodic_check_tasks[user.id].cancel()
         periodic_check_tasks.pop(user.id, None)
-
         hours, mins = divmod(duration, 60)
-        await interaction.response.send_message(f"🔴 تم تسجيل خروجك من RedM. مدة تواجدك: `{hours} ساعة و {mins} دقيقة` | النقاط المكتسبة: `⭐ {earned_points} نقطة`", ephemeral=True)
+        await interaction.response.send_message(f"🔴 تم تسجيل خروجك. المدة: `{hours}س و {mins}د` | النقاط: `⭐ {earned_points}`", ephemeral=True)
 
 @bot.tree.command(name="setup_redm_panel", description="إرسال لوحة تحضير RedM في الروم الحالي")
 @app_commands.checks.has_permissions(administrator=True)
 async def setup_redm_panel(interaction: discord.Interaction):
-    embed = discord.Embed(
-        title="⚔️ تحضير RedM",
-        description="استخدم الأزرار بالأسفل لتسجيل حضورك في RedM.\n\n"
-                    "🟢 **دخول RedM**\nاضغط عند دخولك للسيرفر لبدء احتساب الوقت.\n\n"
-                    "🔴 **خروج RedM**\nاضغط عند انتهائك لإيقاف احتساب الوقت.\n\n"
-                    "⭐ **كل ساعة تواجد = 1 نقطة**",
-        color=discord.Color.red(),
-        timestamp=get_makkah_now()
-    )
+    embed = discord.Embed(title="⚔️ تحضير RedM", description="استخدم الأزرار لتسجيل حضورك وخروجك.", color=discord.Color.red(), timestamp=get_makkah_now())
     await interaction.channel.send(embed=embed, view=RedMAttendanceView(bot))
-    await interaction.response.send_message("✅ تم إرسال لوحة تحضير RedM بنجاح في هذا الروم.", ephemeral=True)
+    await interaction.response.send_message("✅ تم إرسال لوحة التحضير بنجاح.", ephemeral=True)
 
-# ==================== أوامر النقاط والإحصائيات ====================
-@bot.tree.command(name="points", description="عرض عدد النقاط الحالية لك أو لأي عضو آخر")
+@bot.tree.command(name="points", description="عرض عدد النقاط الحالية")
 async def points_cmd(interaction: discord.Interaction, member: discord.Member = None):
     target = member or interaction.user
     async with aiosqlite.connect(DB_NAME) as db:
         async with db.execute("SELECT total_points FROM member_points WHERE user_id = ?", (target.id,)) as cursor:
             row = await cursor.fetchone()
-    
     points = row[0] if row else 0
-    embed = discord.Embed(
-        title="⭐ نظام نقاط تحضير RedM",
-        description=f"العضو: {target.mention}\nرصيد النقاط الحالي: **`{points:,} نقطة`**",
-        color=discord.Color.gold(),
-        timestamp=get_makkah_now()
-    )
+    embed = discord.Embed(title="⭐ نقاط تحضير RedM", description=f"العضو: {target.mention}\nرصيد النقاط: **`{points:,} نقطة`**", color=discord.Color.gold(), timestamp=get_makkah_now())
     await interaction.response.send_message(embed=embed)
 
-# ==================== نظام قائمة الحزم (القائمة المنسدلة الجديدة) ====================
-class PackagesSelect(discord.ui.Select):
-    def __init__(self):
-        options = [
-            discord.SelectOption(label="الحزم المحدودة (Limited Packages)", description="عرض قائمة الحزم المحدودة وأكواد الألوان", emoji="🌟", value="limited_packages"),
-            discord.SelectOption(label="الحزم العادية (Normal Packages)", description="عرض قائمة الحزم العادية وأكواد الألوان", emoji="🔹", value="normal_packages")
-        ]
-        super().__init__(placeholder="اختر نوع الحزم للاستعراض...", min_values=1, max_values=1, options=options)
-
-    async def callback(self, interaction: discord.Interaction):
-        if self.values[0] == "limited_packages":
-            embed = discord.Embed(
-                title="🌟 قائمة الحزم المحدودة",
-                description="إليك تفاصيل الحزم المحدودة وأكواد ألوانها:",
-                color=discord.Color.gold(),
-                timestamp=get_makkah_now()
-            )
-            embed.add_field(
-                name="الحزم المحدودة",
-                value=(
-                    "• **CLASSIC** ➔ `992d22`\n"
-                    "• **FULMINE** ➔ `240b7a`\n"
-                    "• **RED FLAME** ➔ `ff0000`\n"
-                    "• **CLAWS 🐯** ➔ `c27c0e`\n"
-                    "• **PREMIUM-9** ➔ `cda609`\n"
-                    "• **@Elite** ➔ `a6834b`"
-                ),
-                inline=False
-            )
-            await interaction.response.edit_message(embed=embed, view=self.view)
-
-        elif self.values[0] == "normal_packages":
-            embed = discord.Embed(
-                title="🔹 قائمة الحزم العادية",
-                description="إليك تفاصيل الحزم العادية وأكواد ألوانها:",
-                color=discord.Color.blue(),
-                timestamp=get_makkah_now()
-            )
-            embed.add_field(
-                name="الحزم العادية",
-                value=(
-                    "• **@SKY** ➔ `64b0e3`\n"
-                    "• **WOLF KING 🐺** ➔ `1100fe`\n"
-                    "• **PLUM** ➔ `71368a`\n"
-                    "• **ROYAL PINK** ➔ `c852bc`\n"
-                    "• **ROYAL GRAY** ➔ `f7f5f5`\n"
-                    "• **BRIGHT ROSES** ➔ `ad1457`\n"
-                    "• **Venom** ➔ `073403`\n"
-                    "• **GREEN FLAG** ➔ `1f8b4c`\n"
-                    "• **Viper** ➔ `3e4020`\n"
-                    "• **BlackBlood** ➔ `010101`\n"
-                    "• **BLUE FANG** ➔ `2b3eea`"
-                ),
-                inline=False
-            )
-            await interaction.response.edit_message(embed=embed, view=self.view)
-
-class PackagesView(discord.ui.View):
-    def __init__(self):
-        super().__init__(timeout=180)
-        self.add_item(PackagesSelect())
-
-@bot.tree.command(name="packages", description="عرض قوائم الحزم المحدودة والعادية المنسدلة")
-async def packages_cmd(interaction: discord.Interaction):
-    embed = discord.Embed(
-        title="📦 نظام إدارة واستعراض الحزم",
-        description="يرجى اختيار القسم المطلوب من القائمة المنسدلة بالأسفل لعرض تفاصيل الحزم وأكواد الألوان.",
-        color=discord.Color.dark_theme(),
-        timestamp=get_makkah_now()
-    )
-    await interaction.response.send_message(embed=embed, view=PackagesView(), ephemeral=True)
-
-# ==================== نظام تزاوج الخيول المطور (خيارات منسدلة سهلة) ====================
-HORSE_TYPES = [
-    "العربي الدتش",
-    "العربي الابليسي",
-    "العربي الاسود",
-    "الشير الابيض",
-    "الشير الاسود"
-]
+HORSE_TYPES = ["العربي الدتش", "العربي الابليسي", "العربي الاسود", "الشير الابيض", "الشير الاسود"]
 
 class HorseBreedModalDetails(discord.ui.Modal, title="تفاصيل تزاوج الحصان 🐎"):
     def __init__(self, selected_breed: str):
         super().__init__(timeout=None)
         self.selected_breed = selected_breed
 
-    horse_name = discord.ui.TextInput(label="اسم الحصان", placeholder="أدخل اسم الحصان...", required=True)
-    horse_age = discord.ui.TextInput(label="عمر الحصان", placeholder="أدخل عمر الحصان...", required=True)
-    mating_date = discord.ui.TextInput(
-        label="تاريخ ووقت التزاوج", 
-        placeholder="DD-MM-YYYY hh:mm AM/PM (مثال: 24-10-2026 03:30 PM)", 
-        required=True
-    )
+    horse_name = discord.ui.TextInput(label="اسم الحصان", placeholder="أدخل الاسم...", required=True)
+    horse_age = discord.ui.TextInput(label="عمر الحصان", placeholder="أدخل العمر...", required=True)
+    mating_date = discord.ui.TextInput(label="تاريخ ووقت التزاوج", placeholder="DD-MM-YYYY hh:mm AM/PM", required=True)
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         try:
-            mating_dt = datetime.strptime(self.mating_date.value.strip(), "%d-%m-%Y %I:%M %p")
-            mating_dt = mating_dt.replace(tzinfo=MAKKAH_TZ)
+            mating_dt = datetime.strptime(self.mating_date.value.strip(), "%d-%m-%Y %I:%M %p").replace(tzinfo=MAKKAH_TZ)
         except ValueError:
-            await interaction.followup.send("❌ صيغة التاريخ غير صحيحة! يرجى الاستخدام مثال: `24-10-2026 03:30 PM`", ephemeral=True)
+            await interaction.followup.send("❌ صيغة التاريخ غير صحيحة!", ephemeral=True)
             return
-
         ready_dt = mating_dt + timedelta(hours=48)
-        
         async with aiosqlite.connect(DB_NAME) as db:
             await db.execute(
                 "INSERT INTO horse_breeding (user_id, horse_name, breed_type, horse_age, mating_time, ready_time) VALUES (?, ?, ?, ?, ?, ?)",
                 (interaction.user.id, self.horse_name.value, self.selected_breed, self.horse_age.value, mating_dt.isoformat(), ready_dt.isoformat())
             )
             await db.commit()
-
-        now = get_makkah_now()
-        remaining = ready_dt - now
-
-        if remaining.total_seconds() > 0:
-            rem_days = int(remaining.total_seconds() // 86400)
-            rem_hours = int((remaining.total_seconds() % 86400) // 3600)
-            rem_mins = int((remaining.total_seconds() % 3600) // 60)
-            time_text = f"باقي على الإنتاج: `{rem_days} يوم و {rem_hours} ساعة و {rem_mins} دقيقة`" if rem_days > 0 else f"باقي على الإنتاج: `{rem_hours} ساعة و {rem_mins} دقيقة`"
-        else:
-            time_text = "🟢 **انتهت مدة الإنتاج وجاهز للحصاد!**"
-
-        embed = discord.Embed(
-            title="🐎 تم تسجيل عملية تزاوج الحصان بنجاح",
-            description="تم حفظ تفاصيل الإنتاج وحساب الموعد بدقة (مدة الإنتاج: **48 ساعة / يومان**).",
-            color=discord.Color.gold(),
-            timestamp=get_makkah_now()
-        )
+        embed = discord.Embed(title="🐎 تم تسجيل تزاوج الحصان", color=discord.Color.gold(), timestamp=get_makkah_now())
         embed.add_field(name="اسم الحصان", value=f"`{self.horse_name.value}`", inline=True)
-        embed.add_field(name="الفصيلة المحددة", value=f"`{self.selected_breed}`", inline=True)
-        embed.add_field(name="العمر", value=f"`{self.horse_age.value}`", inline=True)
-        embed.add_field(name="وقت التزاوج", value=f"`{format_makkah_time(mating_dt)}`", inline=False)
+        embed.add_field(name="الفصيلة", value=f"`{self.selected_breed}`", inline=True)
         embed.add_field(name="وقت الإنتاج المتوقع", value=f"`{format_makkah_time(ready_dt)}`", inline=False)
-        embed.add_field(name="الحالة", value=time_text, inline=False)
-
         await interaction.followup.send(embed=embed, ephemeral=True)
 
 class HorseBreedSelectView(discord.ui.View):
-    def __init__(self):
+    def __init__(self, bot_instance=None):
         super().__init__(timeout=180)
 
-    @discord.ui.select(
-        placeholder="اختر نوع الحصان للتزاوج 🐎...",
-        options=[discord.SelectOption(label=h_type, value=h_type) for h_type in HORSE_TYPES]
-    )
+    @discord.ui.select(placeholder="اختر نوع الحصان 🐎...", options=[discord.SelectOption(label=h, value=h) for h in HORSE_TYPES])
     async def select_horse_type(self, interaction: discord.Interaction, select: discord.ui.Select):
-        selected_type = select.values[0]
-        await interaction.response.send_modal(HorseBreedModalDetails(selected_type))
+        await interaction.response.send_modal(HorseBreedModalDetails(select.values[0]))
 
-@bot.tree.command(name="breed", description="حساب موعد إنتاج الحصان الجديد (قائمة خيارات منسدلة)")
+@bot.tree.command(name="breed", description="حساب موعد إنتاج الحصان")
 async def breed_cmd(interaction: discord.Interaction):
-    await interaction.response.send_message("🐎 **يرجى اختيار نوع الحصان من القائمة التالية:**", view=HorseBreedSelectView(), ephemeral=True)
+    await interaction.response.send_message("🐎 **اختر نوع الحصان:**", view=HorseBreedSelectView(), ephemeral=True)
 
-@bot.tree.command(name="breed_list", description="عرض قائمة جميع عمليات تزاوج وإنتاج الخيول الحالية")
+@bot.tree.command(name="breed_list", description="عرض قائمة تزاوج الخيول الحالية")
 async def breed_list_cmd(interaction: discord.Interaction):
     async with aiosqlite.connect(DB_NAME) as db:
         async with db.execute("SELECT rowid, horse_name, breed_type, horse_age, ready_time FROM horse_breeding") as cursor:
             rows = await cursor.fetchall()
-
-    embed = discord.Embed(title="🐎 قائمة إنتاج وتزاوج الخيول الحالية (48 ساعة)", color=discord.Color.dark_red(), timestamp=get_makkah_now())
+    embed = discord.Embed(title="🐎 قائمة إنتاج الخيول الحالية", color=discord.Color.dark_red(), timestamp=get_makkah_now())
     if not rows:
-        embed.description = "لا توجد عمليات تزاوج أو إنتاج مسجلة حالياً."
+        embed.description = "لا توجد عمليات مسجلة."
     else:
         now = get_makkah_now()
         for rowid, h_name, b_type, h_age, ready_str in rows:
-            try:
-                ready_dt = datetime.fromisoformat(ready_str)
-                remaining = ready_dt - now
-                if remaining.total_seconds() > 0:
-                    rd = int(remaining.total_seconds() // 86400)
-                    rh = int((remaining.total_seconds() % 86400) // 3600)
-                    rm = int((remaining.total_seconds() % 3600) // 60)
-                    status = f"⏳ باقي: {rd}ي {rh}س {rm}د" if rd > 0 else f"⏳ باقي: {rh}س {rm}د"
-                else:
-                    status = "🟢 جاهز للإنتاج!"
-            except Exception:
-                status = "غير محدد"
-
-            embed.add_field(
-                name=f"ID: {rowid} | {h_name}",
-                value=f"الفصيلة: `{b_type}` | العمر: `{h_age}`\nموعد الإنتاج: `{format_makkah_time(ready_dt)}`\nالحالة: **{status}**",
-                inline=False
-            )
+            ready_dt = datetime.fromisoformat(ready_str)
+            remaining = ready_dt - now
+            status = f"⏳ باقي: {int(remaining.total_seconds()//3600)}س" if remaining.total_seconds() > 0 else "🟢 جاهز!"
+            embed.add_field(name=f"ID: {rowid} | {h_name}", value=f"الفصيلة: `{b_type}`\nالحالة: **{status}**", inline=False)
     await interaction.response.send_message(embed=embed)
 
-@bot.tree.command(name="remove_breed", description="حذف عملية إنتاج حصان من القائمة (للأدمن فقط)")
+@bot.tree.command(name="remove_breed", description="حذف عملية إنتاج حصان")
 @app_commands.checks.has_permissions(administrator=True)
 async def remove_breed(interaction: discord.Interaction, row_id: int):
     async with aiosqlite.connect(DB_NAME) as db:
-        cursor = await db.execute("DELETE FROM horse_breeding WHERE rowid = ?", (row_id,))
+        await db.execute("DELETE FROM horse_breeding WHERE rowid = ?", (row_id,))
         await db.commit()
-        if cursor.rowcount == 0:
-            await interaction.response.send_message(f"❌ لم يتم العثور على عملية إنتاج بهذا الـ ID ({row_id}).", ephemeral=True)
-            return
-    await interaction.response.send_message(f"🗑️ تم حذف عملية إنتاج الحصان (ID: {row_id}) بنجاح.")
+    await interaction.response.send_message(f"🗑️ تم حذف عملية إنتاج الحصان (ID: {row_id}).")
 
 if __name__ == "__main__":
     TOKEN = os.environ.get("DISCORD_TOKEN")
